@@ -19,6 +19,16 @@ import traceback
 import numpy as np
 from keras.utils import np_utils, generic_utils
 import keras as ks
+import datetime
+from datetime import timedelta
+
+ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
+             'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
+             'npr', 'holders']
+bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
+             'gpr', 'npr']
+dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
+tfeatures = ['p_change', 'open', 'high', 'close', 'low']  # , 'volume']
 
 
 class DataManager():
@@ -121,29 +131,20 @@ class DataManager():
     # end of get data
 
     def norm_data(self, stkdata):
-        nmdata = np.ndarray(usdata)
-        return nmdata
+        pass
 
 
     def create_dataset(self, symbs, look_back=5):
         """
         The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
         and the `look_back`, which is the number of previous time steps to use as input variables
-        to predict the next time period — in this case defaulted to 1.
+        to predict the next time period — in this case defaulted to 5.
         symbs
         look_back: number of previous time steps as int
         returns tuple of input and output dataset
         """
-        data_x, data_y = [], []
+        # data_x, data_y = [], []
         data_all = []
-        ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
-                     'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
-                     'npr','holders']
-        bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
-                     'gpr', 'npr']
-        dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
-        tfeatures = ['p_change'] #'open', 'high', 'close', 'low'] #, 'volume']
-
         data_basic = self.get_data(data_type='B')
         data_stock = self.get_data(symbs)
 
@@ -153,24 +154,19 @@ class DataManager():
             for f in bfeatures:
                 data[f] = data_basic.loc[int(symb)][f]
             data['volume'] = data['volume']/10000
-            tdata = data[tfeatures]
-
-            #class
-            tdata = np_utils.to_categorical(tdata>2,2)
-#            print data
-#            print tdata
-
-            data = np.array(data)
-            tdata = np.array(tdata)
+            #convert data to ndarray
+            ndata = np.array(data)
+            tndata = np.array(data[tfeatures])
             for i in range(len(data)-look_back-1):
-                a = data[i:(i+look_back), :]
-                data_x.append(a)
-                data_y.append(tdata[i + look_back, :])
-                data_all.append([a,tdata[i + look_back, :]])
-        return np.array(data_x), np.array(data_y), data_all
+                if data['high'][i] == data['low'][i]: continue # clean data of high equal to low
+                # a = data[i:(i+look_back), :]
+                # data_x.append(a)
+                # data_y.append(tdata[i + look_back, :])
+                data_all.append([ndata[i:(i+look_back), :],tndata[i + look_back, :]])
+        return data_all
 
 
-    def split_dataset(self, dataset, train_psize):
+    def split_dataset(self, dataset, train_psize, batch_size = 1):
         """
         Splits dataset into training and test datasets. The last `look_back` rows in train dataset
         will be used as `look_back` for the test dataset.
@@ -178,14 +174,91 @@ class DataManager():
         :param train_psize: specifies the percentage of train data within the whole dataset
         :return: tuple of training data and test dataset
         """
-
+        np.random.seed(19801016)
         np.random.shuffle(dataset)
-        train_size = long(len(dataset)*train_psize)
-        print train_size
+        train_size = (long(len(dataset) * train_psize) / batch_size) * batch_size
+        test_size = (len(dataset)-train_size) / batch_size * batch_size
         train = dataset[0:train_size]
-        test = dataset[train_size+1:len(dataset)]
+        test = dataset[train_size : train_size + test_size]
         print('train_dataset: {}, test_dataset: {}'.format(len(train), len(test)))
         return train, test
+
+    def split_label(self, dataset):
+        """
+        Splits dataset into data and labels.
+        :param dataset: source dataset, list of two elements
+        :return: tuple of training data and test dataset
+        """
+        data_x, data_y = [], []
+        for d in dataset:
+            data_x.append(d[0])
+            data_y.append(d[1])
+        data_x = np.array(data_x)
+        data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], data_x.shape[2])) #TODO can be removed?
+        data_y = np.array(data_y)
+
+        return data_x, data_y
+
+    def get_today_data(self, look_back):
+        """
+        Splits dataset into data and labels.
+        :param dataset: source dataset, list of two elements
+        :return: data_x of predication
+        """
+        today_data = []
+        edate = datetime.date.today()
+        # in case of holidays without trading
+        sdate = edate - timedelta(days = (look_back + 10))
+        edate = edate.strftime('%Y-%m-%d')
+        sdate = sdate.strftime('%Y-%m-%d')
+
+        basics = ts.get_stock_basics()
+        for symb in list(basics.index):
+            try:
+                data = ts.get_hist_data(symb, start=sdate, end=edate)
+                if data is None: continue
+            except:
+                continue
+
+            if len(data) < look_back or data['high'][-1] == data['low'][-1]: continue
+            data = data.drop(dfeatures, axis=1)
+
+            for f in bfeatures:
+                data[f] = basics.loc[symb][f]
+            data['volume'] = data['volume']/10000
+
+            #convert data to ndarray
+            ndata = np.array(data)
+            today_data.append([ndata[len(data)-look_back:len(data)]])
+        return today_data
+
+def main():
+    dmr = DataManager()
+    data = dmr.create_dataset(['601866'])
+    # print '#####data samples#############'
+    # print data[0:2]
+
+    # train, test = dmr.split_dataset(data, 0.7)
+    # print '#####train samples#############'
+    # print train[0:2]
+    #
+    # print '#####test samples##############'
+    # print test[0:2]
+    #
+    # data_x, data_y = dmr.split_label(train)
+    # print '#####train_x samples############'
+    # print data_x[0:2]
+    #
+    # print '#####train_y samples############'
+    # print data_y[0:2]
+
+    todata = dmr.get_today_data(5)
+    print '#####today data samples############'
+    print todata
+
+if __name__ == '__main__':
+    main()
+
 
 """
 import DataManager as dm
