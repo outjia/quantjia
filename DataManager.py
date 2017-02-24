@@ -249,27 +249,32 @@ class DataManager():
         data_y = np_utils.to_categorical(data_y, 3)
         return data_y
 
-    def get_todaydata(self, look_back, refresh=False, trytimes=3):
+    def get_todaydata(self, look_back=22, refresh=False, trytimes=3):
         """
         Splits dataset into data and labels.
         :param dataset: source dataset, list of two elements
-        :return: data_x of predication
+        :return: data_x of predication, the last column is the symb code
         """
         sdate = None
         edate = None
         today_data = []
+        rtdata = []
         cachefile = None
+        failedsymbs = []
 
         if datetime.datetime.now().hour > 15:
             edate = datetime.date.today()
         else:
             edate = datetime.date.today() - timedelta(days=1)
         cachefile = './data/todaydata' + edate.strftime('%Y%m%d') + '.npy'
+        # TODO lookback aware
 
         if refresh==False:
             try:
                 today_data = np.load(cachefile)
                 if today_data is not None and len(today_data) != 0:
+                    print "Get today data from cache"
+                    # TODO customize data to param lookback
                     return today_data
                 else:
                     pass
@@ -283,7 +288,7 @@ class DataManager():
 
         def trymore(trytimes, symbs):
             if trytimes == 0 or symbs is None or len(symbs) == 0: return
-            failedsymbs = []
+            del failedsymbs[:]
             for symb in list(symbs):
                 try:
                     data = ts.get_hist_data(symb, start=sdate, end=edate)
@@ -300,6 +305,8 @@ class DataManager():
                 for f in bfeatures:
                     data[f] = basics.loc[symb][f]
                 data['volume'] = data['volume'] / 10000
+                data['code'] = int(symb)
+                # TODO Careful, code shouldn't be used in train and predict, just for referencing!!!
 
                 # convert data to ndarray
                 ndata = np.array(data)
@@ -309,7 +316,11 @@ class DataManager():
         trymore(trytimes, basics.index)
         today_data = np.array(today_data)
         np.save(cachefile, today_data)
+
         print("Get latest %i stocks info from %i stocks." % (len(today_data), len(basics)))
+        print("The following symbols can't be resolved after %i retries:"%(trytimes-1))
+        print failedsymbs
+
         return today_data
 
     def plot_out(sortout, x_index, y_index, points=200):

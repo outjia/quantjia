@@ -88,15 +88,18 @@ def predict(model, data_x, data_y, batch_size):
     out = np.column_stack([proba, data_y])
     sortout = out[(-out[:,2]).argsort(), :]
     print sortout[0:200, 0:5]
-    if not __debug__: np.savetxt("./models/" + signature + "_result.txt", sortout, fmt='%.f')
+    if not __debug__: np.savetxt("./models/" + signature + "_result.txt", sortout, fmt='%f')
     return sortout
 
 def predict_today(model, batch_size):
     dmr = dm.DataManager()
-    todaydata = dmr.get_todaydata()
-
+    todaydata = dmr.get_todaydata(look_back=5, refresh=False)
     if todaydata is not None:
-        proba = model.predict_proba(todaydata, verbose=0, batch_size=batch_size)
-
-    return proba[(-proba[:, 2]).argsort(), :]
+        if model.stateful:
+            todaydata = todaydata[:len(todaydata) / batch_size * batch_size]
+        proba = model.predict_proba(todaydata[:,:,0:todaydata.shape[2]-1], verbose=0, batch_size=batch_size)
+    out = np.column_stack([proba, todaydata[:,0,todaydata.shape[2]-1], todaydata[:,0,0:3]])
+    sortout = out[(-out[:,2]).argsort(), :]
+    if not __debug__: np.savetxt("./models/" + signature + "_result.txt", sortout, fmt='%f')
+    return sortout
 
