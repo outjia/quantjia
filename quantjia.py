@@ -1,6 +1,7 @@
 # coding=utf-8
 
 import keras.backend as K
+import matplotlib.pyplot as plt
 from keras.layers import Dense, Activation, GRU, Dropout
 from keras.models import Sequential, save_model, load_model
 from keras.utils import np_utils
@@ -53,10 +54,42 @@ def build_model(look_back, batch_size, input_dim, output_dim):
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['precision', 'categorical_accuracy', 'fmeasure'])
     return model
 
+def predict():
+    datapath = './data/new/'
+    filename = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
+    dmr = dm.DataManager()
+    todaydata = dmr.get_today_data()
+    if not __debug__: np.savetxt(datapath + filename + ".txt", todaydata, fmt='%.f')
+
+
+def catnorm_data(data_y):
+    data_y[data_y < -2] = 11
+    data_y[data_y < 2] = 12
+    data_y[data_y < 11] = 13
+    data_y = data_y - 11
+    data_y = np_utils.to_categorical(data_y, 3)
+    return data_y
+
+
+def plot_out(sortout, x_index, y_index, points = 200):
+    step = len(sortout)/points
+    plot_data = []
+    i = 1
+    plt.figure(1)
+    while i * step < len(sortout):
+        s = (i-1)*step
+        e = min(i*step, len(sortout))
+        x = np.min(sortout[s:e,x_index])
+        y = np.mean(sortout[s:e,y_index])
+        plot_data.append([x,y])
+        plt.plot(x, y, 'ro')
+        i += 1
+    plt.show()
+
 
 def main():
     rebuild = True
-    if __debug__ & rebuild:
+    if __debug__ :
         look_back = 5
         batch_size = 1
         epoch = 1
@@ -74,35 +107,22 @@ def main():
     train, test = dmr.split_dataset(dataset, 0.8, batch_size)
     train_x, train_y = dmr.split_label(train)
     test_x, test_y = dmr.split_label(test)
-
     out_y = test_y.copy()
-
-    # can only target to pchange_price
-    test_y = test_y[:,0]
-    train_y = train_y[:,0]
-
-    train_y[train_y < -2] = 11
-    train_y[train_y < 2] = 12
-    train_y[train_y < 11] = 13
-    train_y = train_y - 11
-    train_y = np_utils.to_categorical(train_y, 3)
-    test_y[test_y < -2] = 11
-    test_y[test_y < 2] = 12
-    test_y[test_y < 11] = 13
-    test_y = test_y - 11
-    test_y = np_utils.to_categorical(test_y, 3)
+    #target to pchange_price
+    train_y = catnorm_data(train_y[:,0])
+    test_y = catnorm_data(test_y[:, 0])
     filename = None
     if rebuild:
         filename = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
         model = build_model(look_back, batch_size, train_x.shape[2], train_y.shape[1])
         callback = model.fit(train_x, train_y, batch_size=batch_size, nb_epoch=epoch, validation_data=(test_x, test_y))
-
-        #Save models and metrics
-        save_model(model, './models/' + filename+'.h5')
-        save_model(model, './models/latest.h5')
-        hist = dict(callback.history)
-        for key in hist.keys():
-            np.savetxt("./models/"+filename+"_"+key+".txt", hist[key])
+        if not __debug__:
+            #Save models and metrics
+            save_model(model, './models/' + filename+'.h5')
+            save_model(model, './models/latest.h5')
+            hist = dict(callback.history)
+            for key in hist.keys():
+                np.savetxt("./models/"+filename+"_"+key+".txt", hist[key])
     else:
         filename = 'latest'
         try:
@@ -110,16 +130,17 @@ def main():
         except:
             raise "Can't load model at: ./models/latest.h5"
 
-    # preds = model.predict_classes(test_x, batch_size=batch_size)
-    proba = model.predict_proba(test_x, verbose=0, batch_size=batch_size)
 
+    proba = model.predict_proba(test_x, verbose=0, batch_size=batch_size)
     out = np.column_stack([proba,out_y])
     sortout = out[(-out[:,2]).argsort(), :]
-    np.savetxt("./models/" + filename + "_result.txt", sortout, fmt='%f')
-    print sortout[0:200][0:5]
+    print sortout[0:200, 0:5]
 
-    # train_predict = model.predict(train_x, batch_size)
-    # test_predict = model.predict(test_x, batch_size)
+    if not __debug__: np.savetxt("./models/" + filename + "_result.txt", sortout, fmt='%.f')
+
+def test_plot():
+    d = np.loadtxt("./models/2017_02_23_18_23_20/2017_02_23_18_23_20_result.txt")
+    plot_out(d, 2, 3)
 
 if __name__ == '__main__':
-    main()
+    test_plot()

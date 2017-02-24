@@ -205,8 +205,15 @@ class DataManager():
         :param dataset: source dataset, list of two elements
         :return: data_x of predication
         """
+        sdate = None
+        edate = None
         today_data = []
-        edate = datetime.date.today()
+
+        if datetime.datetime.now().hour > 15:
+            edate = datetime.date.today()
+        else:
+            edate = datetime.date.today() - timedelta(days=1)
+
         # in case of holidays without trading
         sdate = edate - timedelta(days = (look_back + 10))
         edate = edate.strftime('%Y-%m-%d')
@@ -221,6 +228,8 @@ class DataManager():
                 continue
 
             if len(data) < look_back or data['high'][-1] == data['low'][-1]: continue
+            if data.index[0] != edate: continue
+
             data = data.drop(dfeatures, axis=1)
 
             for f in bfeatures:
@@ -230,6 +239,7 @@ class DataManager():
             #convert data to ndarray
             ndata = np.array(data)
             today_data.append([ndata[len(data)-look_back:len(data)]])
+        print("Get latest %i stocks info from %i stocks.", len(today_data), len(basics))
         return today_data
 
 def main():
@@ -254,6 +264,7 @@ def main():
 
     todata = dmr.get_today_data(5)
     print '#####today data samples############'
+    np.savetxt("./data_new.txt", todata, fmt='%.f')
     print todata
 
 if __name__ == '__main__':
