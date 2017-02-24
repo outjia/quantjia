@@ -158,13 +158,53 @@ class DataManager():
             ndata = np.array(data)
             tndata = np.array(data[tfeatures])
             for i in range(len(data)-look_back-1):
-                if data['high'][i] == data['low'][i]: continue # clean data of high equal to low
-                # a = data[i:(i+look_back), :]
-                # data_x.append(a)
-                # data_y.append(tdata[i + look_back, :])
+                if data['high'][i] == data['low'][i]:
+                    continue # clean data of high equal to low
                 data_all.append([ndata[i:(i+look_back), :],tndata[i + look_back, :]])
         return data_all
 
+    def create_dataset2(self, symbs, look_back=5):
+        """
+        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+        and the `look_back`, which is the number of previous time steps to use as input variables
+        to predict the next time period — in this case defaulted to 5.
+        symbs
+        look_back: number of previous time steps as int
+        returns a list of data cells
+        """
+        data_all = []
+
+        data_basic = self.get_data(data_type='B')
+        data_stocks = self.get_data(symbs)
+
+        for symb in data_stocks:
+            data_cell = []  # a data instance, for training and test
+            bdata = [int(symb)]  # sym,...
+            tsdata = []  # time serial data
+            rtdata = []  # real time data, current opening price etc.
+            ldata = []  # label data, day+1, day+2
+
+            data_stock = data_stocks[symb]
+            data_stock = data_stock.drop(dfeatures, axis=1)
+            ldata_stock = []
+
+            # basic data
+            for f in bfeatures:
+                bdata.append(data_basic.loc[int(symb)][f])
+
+            data_stock['volume'] = data_stock['volume']/10000
+            #convert data to ndarray
+            ndata_stock = np.array(data_stock)
+            ldata_stock = np.array(data_stock[tfeatures])
+            for i in range(len(data_stock)-look_back-2):
+                if data_stock['high'][i] == data_stock['low'][i]:
+                    continue # clean data of high equal to low
+                tsdata = ndata_stock[i:(i+look_back), :]
+                rtdata = ldata_stock[i + look_back, :]
+                ldata = ldata_stock[i + look_back + 1, :]
+                data_cell = [np.array(bdata), tsdata, rtdata, ldata]
+                data_all.append(data_cell)
+        return data_all
 
     def split_dataset(self, dataset, train_psize, batch_size = 1):
         """
@@ -176,6 +216,8 @@ class DataManager():
         """
         np.random.seed(19801016)
         np.random.shuffle(dataset)
+        # only take effect for array, so need to convert to numpy.array before shuffle
+        # 多维矩阵中，只对第一维（行）做打乱顺序操作
         train_size = (long(len(dataset) * train_psize) / batch_size) * batch_size
         test_size = (len(dataset)-train_size) / batch_size * batch_size
         train = dataset[0:train_size]
@@ -199,7 +241,15 @@ class DataManager():
 
         return data_x, data_y
 
-    def get_today_data(self, look_back):
+    def catnorm_data(data_y):
+        data_y[data_y < -2] = 11
+        data_y[data_y < 2] = 12
+        data_y[data_y < 11] = 13
+        data_y = data_y - 11
+        data_y = np_utils.to_categorical(data_y, 3)
+        return data_y
+
+    def get_todaydata(self, look_back, refresh=False, trytimes=3):
         """
         Splits dataset into data and labels.
         :param dataset: source dataset, list of two elements
@@ -208,43 +258,78 @@ class DataManager():
         sdate = None
         edate = None
         today_data = []
+        cachefile = None
 
         if datetime.datetime.now().hour > 15:
             edate = datetime.date.today()
         else:
             edate = datetime.date.today() - timedelta(days=1)
+        cachefile = './data/todaydata' + edate.strftime('%Y%m%d') + '.npy'
 
+        if refresh==False:
+            try:
+                today_data = np.load(cachefile)
+                if today_data is not None and len(today_data) != 0:
+                    return today_data
+                else:
+                    pass
+            except:
+                pass
         # in case of holidays without trading
-        sdate = edate - timedelta(days = (look_back + 10))
+        sdate = edate - timedelta(days = (look_back + look_back/5 * 2 + 20))
         edate = edate.strftime('%Y-%m-%d')
         sdate = sdate.strftime('%Y-%m-%d')
-
         basics = ts.get_stock_basics()
-        for symb in list(basics.index):
-            try:
-                data = ts.get_hist_data(symb, start=sdate, end=edate)
-                if data is None: continue
-            except:
-                continue
 
-            if len(data) < look_back or data['high'][-1] == data['low'][-1]: continue
-            if data.index[0] != edate: continue
+        def trymore(trytimes, symbs):
+            if trytimes == 0 or symbs is None or len(symbs) == 0: return
+            failedsymbs = []
+            for symb in list(symbs):
+                try:
+                    data = ts.get_hist_data(symb, start=sdate, end=edate)
+                    if data is None:
+                        failedsymbs.append(symb)
+                        continue
+                except:
+                    failedsymbs.append(symb)
+                    continue
 
-            data = data.drop(dfeatures, axis=1)
+                if len(data) < look_back or data['high'][-1] == data['low'][-1]: continue
+                if data.index[0] != edate: continue
+                data = data.drop(dfeatures, axis=1)
+                for f in bfeatures:
+                    data[f] = basics.loc[symb][f]
+                data['volume'] = data['volume'] / 10000
 
-            for f in bfeatures:
-                data[f] = basics.loc[symb][f]
-            data['volume'] = data['volume']/10000
-
-            #convert data to ndarray
-            ndata = np.array(data)
-            today_data.append([ndata[len(data)-look_back:len(data)]])
-        print("Get latest %i stocks info from %i stocks.", len(today_data), len(basics))
+                # convert data to ndarray
+                ndata = np.array(data)
+                today_data.append(ndata[len(data) - look_back:len(data)])
+            trymore(trytimes - 1, failedsymbs)
+            return
+        trymore(trytimes, basics.index)
+        today_data = np.array(today_data)
+        np.save(cachefile, today_data)
+        print("Get latest %i stocks info from %i stocks." % (len(today_data), len(basics)))
         return today_data
+
+    def plot_out(sortout, x_index, y_index, points=200):
+        step = len(sortout) / points
+        plot_data = []
+        i = 1
+        plt.figure(1)
+        while i * step < len(sortout):
+            s = (i - 1) * step
+            e = min(i * step, len(sortout))
+            x = np.min(sortout[s:e, x_index])
+            y = np.mean(sortout[s:e, y_index])
+            plot_data.append([x, y])
+            plt.plot(x, y, 'ro')
+            i += 1
+        plt.show()
 
 def main():
     dmr = DataManager()
-    data = dmr.create_dataset(['601866'])
+    # data = dmr.create_dataset(['601866'])
     # print '#####data samples#############'
     # print data[0:2]
 
@@ -262,10 +347,16 @@ def main():
     # print '#####train_y samples############'
     # print data_y[0:2]
 
-    todata = dmr.get_today_data(5)
+    todata = dmr.get_todaydata(22, True, 10)
     print '#####today data samples############'
-    np.savetxt("./data_new.txt", todata, fmt='%.f')
     print todata
+
+    # import copy
+    # data = np.array(dmr.create_dataset2(['601866','600151','600152','600153'])[:3])
+    # origdata = data.copy()
+    # np.random.shuffle(data)
+    # print '#####get dataset2 samples############'
+    # print data
 
 if __name__ == '__main__':
     main()
