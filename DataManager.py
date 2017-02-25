@@ -63,7 +63,7 @@ class DataManager():
                 i = 0
                 while i < len(symbols):
                     try:
-                        df = ts.get_hist_data(symbols[i])
+                        df = ts.get_hist_data(symbols[i])[::-1]
                     except:
                         symbs.append(symbols[i])
                         print "Exception when processing " + symbols[i]
@@ -120,7 +120,7 @@ class DataManager():
                 dict = {}
                 while i < len(symbols):
                     df = ts.get_hist_data(symbols[i])
-                    dict[symbols[i]] = df
+                    dict[symbols[i]] = df[::-1]
                     if cache is True: df.to_csv(self.data_path+'daily/'+symbols[i]+'.csv')
                     i = i + 1
                 return dict
@@ -238,10 +238,9 @@ class DataManager():
         data_x = np.array(data_x)
         data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], data_x.shape[2])) #TODO can be removed?
         data_y = np.array(data_y)
-
         return data_x, data_y
 
-    def catnorm_data(data_y):
+    def catnorm_data(self, data_y):
         data_y[data_y < -2] = 11
         data_y[data_y < 2] = 12
         data_y[data_y < 11] = 13
@@ -291,7 +290,7 @@ class DataManager():
             del failedsymbs[:]
             for symb in list(symbs):
                 try:
-                    data = ts.get_hist_data(symb, start=sdate, end=edate)
+                    data = ts.get_hist_data(symb, start=sdate, end=edate)[::-1]
                     if data is None:
                         failedsymbs.append(symb)
                         continue

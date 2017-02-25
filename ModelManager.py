@@ -92,6 +92,7 @@ def predict(model, data_x, data_y, batch_size):
     return sortout
 
 def predict_today(model, batch_size):
+    #TODO merge predict and predict_today
     dmr = dm.DataManager()
     todaydata = dmr.get_todaydata(look_back=5, refresh=False)
     if todaydata is not None:
