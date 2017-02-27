@@ -39,53 +39,43 @@ class DataManager():
         self.storage = self.configParser.get('dbconfig', 'storage')
         self.logfile = logfile
 
-    def refresh_data(self, symbols = None, data_type = 'H', trytimes=3):
+    def refresh_data(self, start='2005-01-01', trytimes=10):
         # refresh history data
-        # data_type = 'H', refresh h_data
-        # data_type = 'B', refresh basics
         # trytimes, times to try
 
-        if trytimes == 0:
-            return
+        basics = ts.get_stock_basics()
+        basics.to_csv(self.data_path+'basics.csv')
+        all_data = ts.get_today_all()
+        symbols = all_data['code']
 
-        symbs = []
-
-        if symbols is None:
-            all_data = ts.get_today_all()
-            symbols = all_data['code']
-
-        if self.storage == 'csv':
-            if 'B' in data_type:
-                basics = ts.get_stock_basics()
-                basics.to_csv(self.data_path+'basics.csv')
-
-            if 'H' in data_type:
-                i = 0
-                while i < len(symbols):
-                    try:
-                        df = ts.get_hist_data(symbols[i])[::-1]
-                    except:
-                        symbs.append(symbols[i])
-                        print "Exception when processing " + symbols[i]
-                        traceback.print_exc()
-                        i = i + 1
-                        continue
-
-                    if df is not None:
-                        df.to_csv(self.data_path+'daily/'+symbols[i]+'.csv')
-                    else:
-                        # TODO: add log trace
-                        symbs.append(symbols[i])
+        def trymore(symbs, times):
+            failsymbs = []
+            i = 0
+            while i < len(symbs):
+                try:
+                    df = ts.get_hist_data(symbs[i], start)[::-1]
+                except:
+                    failsymbs.append(symbs[i])
+                    print "Exception when processing " + symbs[i]
+                    traceback.print_exc()
                     i = i + 1
-        else:
-            # storage:database
-            return
+                    continue
 
-        if len(symbs) > 0:
-            print "In round " + str(trytimes) + " following symbols can't be resolved:\n" + symbs
-            self.refresh_data(symbs, 'H', trytimes - 1)
+                if df is not None:
+                     df.to_csv(self.data_path+'daily/'+symbs[i]+'.csv')
+                else:
+                    # TODO: add log trace
+                    failsymbs.append(symbs[i])
+                i = i + 1
+            if len(failsymbs) > 0:
+                print "In round " + str(times) + " following symbols can't be resolved:\n" + failsymbs
+                if times-1 > 0:
+                    trymore(failsymbs, times-1)
+                else: return
 
-    # end of refresh_data
+        trymore(symbols, trytimes)
+
+# end of refresh_data
 
 
 
@@ -150,6 +140,7 @@ class DataManager():
 
         for symb in data_stock:
             data = data_stock[symb]
+            # data = data_stock[symb][::-1] # for test
             data = data.drop(dfeatures, axis=1)
             for f in bfeatures:
                 data[f] = data_basic.loc[int(symb)][f]
@@ -170,40 +161,46 @@ class DataManager():
         to predict the next time period — in this case defaulted to 5.
         symbs
         look_back: number of previous time steps as int
-        returns a list of data cells
+        returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
         """
+        print "Start to create dataset of a list of data cells of (bsdata, tsdata, rtdata, lbdata)"
         data_all = []
-
         data_basic = self.get_data(data_type='B')
         data_stocks = self.get_data(symbs)
 
         for symb in data_stocks:
             data_cell = []  # a data instance, for training and test
-            bdata = [int(symb)]  # sym,...
+            bsdata = [int(symb)]  # sym,...
             tsdata = []  # time serial data
-            rtdata = []  # real time data, current opening price etc.
-            ldata = []  # label data, day+1, day+2
+            rtdata = [int(symb)]  # real time data, current opening price etc.
+            lbdata = [int(symb)]  # label data, day+1, day+2
 
             data_stock = data_stocks[symb]
+            # data_stock = data_stocks[symb][::-1] # TODO for test, revert
             data_stock = data_stock.drop(dfeatures, axis=1)
             ldata_stock = []
 
             # basic data
             for f in bfeatures:
-                bdata.append(data_basic.loc[int(symb)][f])
+                bsdata.append(data_basic.loc[int(symb)][f])
+                data_stock[f] = data_basic.loc[int(symb)][f] #TODO, tobe deleted
 
             data_stock['volume'] = data_stock['volume']/10000
+
             #convert data to ndarray
             ndata_stock = np.array(data_stock)
             ldata_stock = np.array(data_stock[tfeatures])
             for i in range(len(data_stock)-look_back-2):
-                if data_stock['high'][i] == data_stock['low'][i]:
+                if data_stock['high'][i+look_back] == data_stock['low'][i+look_back]:
                     continue # clean data of high equal to low
+                rtdata = [int(symb)]
+                lbdata = [int(symb)]
                 tsdata = ndata_stock[i:(i+look_back), :]
-                rtdata = ldata_stock[i + look_back, :]
-                ldata = ldata_stock[i + look_back + 1, :]
-                data_cell = [np.array(bdata), tsdata, rtdata, ldata]
+                rtdata.extend(ldata_stock[i + look_back, :])
+                lbdata.extend(ldata_stock[i + look_back + 1, :])
+                data_cell = [np.array(bsdata), tsdata, np.array(rtdata), np.array(lbdata)]
                 data_all.append(data_cell)
+        print "Finish the dataset creation."
         return data_all
 
     def split_dataset(self, dataset, train_psize, batch_size = 1):
@@ -214,6 +211,7 @@ class DataManager():
         :param train_psize: specifies the percentage of train data within the whole dataset
         :return: tuple of training data and test dataset
         """
+        print "Start to split dataset into train and test"
         np.random.seed(19801016)
         np.random.shuffle(dataset)
         # only take effect for array, so need to convert to numpy.array before shuffle
@@ -233,19 +231,71 @@ class DataManager():
         """
         data_x, data_y = [], []
         for d in dataset:
-            data_x.append(d[0])
-            data_y.append(d[1])
+            data_x.append(d[1])
+            data_y.append(d[3])
         data_x = np.array(data_x)
         data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], data_x.shape[2])) #TODO can be removed?
         data_y = np.array(data_y)
         return data_x, data_y
 
-    def catnorm_data(self, data_y):
+    def split_label2(self, dataset):
+        """
+        Splits dataset into data and labels.
+        :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata]
+        :return: tuple of (bsdata, tsdata, rtdata, lbdata)
+        """
+        bsdata, tsdata, rtdata, lbdata = [], [], [], []
+        for d in dataset:
+            bsdata.append(d[0])
+            tsdata.append(d[1])
+            rtdata.append(d[2])
+            lbdata.append(d[3])
+        bsdata = np.array(bsdata)
+        tsdata = np.array(tsdata)
+        rtdata = np.array(rtdata)
+        lbdata = np.array(lbdata)
+        return bsdata, tsdata, rtdata, lbdata
+
+    def catnorm_data(self, data):
+        data_y = data.copy()
         data_y[data_y < -2] = 11
         data_y[data_y < 2] = 12
         data_y[data_y < 11] = 13
         data_y = data_y - 11
         data_y = np_utils.to_categorical(data_y, 3)
+        return data_y
+
+    def catnorm_data2(self, data):
+        data_y = data.copy()
+        data_y[data_y < 2] = 11
+        data_y[data_y < 11] = 12
+        data_y = data_y - 11
+        data_y = np_utils.to_categorical(data_y, 2)
+        return data_y
+
+
+    def catnorm_data2test(self, data):
+        data_y = data.copy()
+        data_y[data_y < 0] = 11
+        data_y[data_y < 11] = 12
+        data_y = data_y - 11
+        data_y = np_utils.to_categorical(data_y, 2)
+        return data_y
+
+    def catnorm_data10(self, data):
+        data_y = data.copy()
+        data_y[data_y < -9] = 11
+        data_y[data_y < -7] = 12
+        data_y[data_y < -5] = 13
+        data_y[data_y < -3] = 14
+        data_y[data_y < -1] = 15
+        data_y[data_y < 1] = 16
+        data_y[data_y < 3] = 17
+        data_y[data_y < 5] = 18
+        data_y[data_y < 7] = 19
+        data_y[data_y < 11] = 20
+        data_y = data_y - 11
+        data_y = np_utils.to_categorical(data_y, 10)
         return data_y
 
     def get_todaydata(self, look_back=22, refresh=False, trytimes=3):
@@ -319,23 +369,26 @@ class DataManager():
         print("Get latest %i stocks info from %i stocks." % (len(today_data), len(basics)))
         print("The following symbols can't be resolved after %i retries:"%(trytimes-1))
         print failedsymbs
-
         return today_data
 
-    def plot_out(sortout, x_index, y_index, points=200):
-        step = len(sortout) / points
-        plot_data = []
-        i = 1
-        plt.figure(1)
-        while i * step < len(sortout):
-            s = (i - 1) * step
-            e = min(i * step, len(sortout))
-            x = np.min(sortout[s:e, x_index])
-            y = np.mean(sortout[s:e, y_index])
-            plot_data.append([x, y])
-            plt.plot(x, y, 'ro')
-            i += 1
-        plt.show()
+def plot_out(sortout, x_index, y_index, points=200):
+    step = len(sortout) / points
+    plot_data = []
+    i = 1
+    plt.figure(1)
+    while i * step < len(sortout):
+        s = (i - 1) * step
+        e = min(i * step, len(sortout))
+        x = np.min(sortout[s:e, x_index])
+        y = np.mean(sortout[s:e, y_index])
+        plot_data.append([x, y])
+        plt.plot(x, y, 'ro')
+        i += 1
+    plt.show()
+
+def test_plot():
+    d = np.loadtxt("./models/2017_02_23_18_23_20/2017_02_23_18_23_20_result.txt")
+    dmr.plot_out(d, 2, 3)
 
 def main():
     dmr = DataManager()
