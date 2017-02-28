@@ -9,26 +9,66 @@
 
 
 import ConfigParser
-import os
-
-import tushare as ts
-import pandas as pd
-import time
-import csv
 import traceback
-import numpy as np
-from keras.utils import np_utils, generic_utils
-import keras as ks
+
 import datetime
+import time
+import numpy as np
+import pandas as pd
+import tushare as ts
 from datetime import timedelta
+from datetime import date
+from keras.utils import np_utils
+from sklearn import preprocessing
+import keras.backend as K
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
              'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
              'npr', 'holders']
-bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
-             'gpr', 'npr']
-dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
-tfeatures = ['p_change', 'open', 'high', 'close', 'low']  # , 'volume']
+
+def mydate(datestr):
+    if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
+        datelist = []
+        for ds in datestr:
+            datelist.append(mydate(ds))
+        return datelist
+    else:
+        datearr = datestr.split('-')
+        if len(datearr) !=3: raise "Wrong date string format " + datestr
+        return date(int(datearr[0]), int(datearr[1]), int(datearr[2]))
+
+
+def intdate(dt):
+    if isinstance(dt, list) or isinstance(dt, np.ndarray):
+        intdatelist = []
+        for d in dt:
+            intdatelist.append(intdate(d))
+        return intdatelist
+    else:
+        return dt.year*10000+dt.month*100+dt.day
+
+def intstr(ints):
+    if isinstance(ints, list) or isinstance(ints, np.ndarray):
+        intarr = []
+        for i in ints:
+            intarr.append(int(i))
+        return intarr
+    else:
+        return int(ints)
+
+def minmax_scale(arr):
+    # arr = np.array(arr, copy=False)
+    mi = np.min(arr)
+    mx = np.max(arr)
+    arr = (arr-mi)/(mx-mi+K.epsilon())
+    return arr
+
+
+def pricechange_scale(arr):
+    # arr = np.array(arr, copy=False)
+    mi = np.min(arr)
+    arr = (arr-mi)/(mi+K.epsilon())*100
+    return arr
 
 
 class DataManager():
@@ -44,7 +84,7 @@ class DataManager():
         # trytimes, times to try
 
         basics = ts.get_stock_basics()
-        basics.to_csv(self.data_path+'basics.csv')
+        basics.to_csv(self.data_path + 'basics.csv')
         all_data = ts.get_today_all()
         symbols = all_data['code']
 
@@ -62,63 +102,53 @@ class DataManager():
                     continue
 
                 if df is not None:
-                     df.to_csv(self.data_path+'daily/'+symbs[i]+'.csv')
+                    df.to_csv(self.data_path + 'daily/' + symbs[i] + '.csv')
                 else:
                     # TODO: add log trace
                     failsymbs.append(symbs[i])
                 i = i + 1
             if len(failsymbs) > 0:
                 print "In round " + str(times) + " following symbols can't be resolved:\n" + failsymbs
-                if times-1 > 0:
-                    trymore(failsymbs, times-1)
-                else: return
+                if times - 1 > 0:
+                    trymore(failsymbs, times - 1)
+                else:
+                    return
 
         trymore(symbols, trytimes)
 
-# end of refresh_data
+    # end of refresh_data
 
 
 
-    def get_data(self, symbols=None,  start=None, end=None, data_type='H', online=False, cache=True):
+    def get_data(self, symbols=None, online=False, cache=True):
         # get data
-        # data_type = 'H', get h_data
-        # data_type = 'B', get basics
-        # online = False, get local data
-        if online is False and self.storage == 'csv':
-            if 'B' in data_type:
-                return pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
-
-            if 'H' in data_type and symbols is not None:
-                i = 0
-                dict = {}
-                while i < len(symbols):
-                    try:
-                        dict[symbols[i]] = pd.read_csv(self.data_path+'daily/'+symbols[i]+'.csv', index_col =0,dtype={'code':str})
-                    except:
-                        print "Can't get data for symbol:" + str(symbols[i])
-                    i = i + 1
-                return dict
-
-        elif online is True:
-            if 'B' in data_type:
-                basics = ts.get_stock_basics()
-                if cache is True: basics.to_csv(self.data_path+'basics.csv')
-                return basics
-
-            if 'H' in data_type:
-                i = 0
-                dict = {}
-                while i < len(symbols):
+        if symbols is None: return
+        dict = {}
+        i = 0
+        while i < len(symbols):
+            try:
+                if online is False:
+                    dict[symbols[i]] = pd.read_csv(self.data_path + 'daily/' + symbols[i] + '.csv', index_col=0,
+                                                   dtype={'code': str})
+                else:
                     df = ts.get_hist_data(symbols[i])
                     dict[symbols[i]] = df[::-1]
-                    if cache is True: df.to_csv(self.data_path+'daily/'+symbols[i]+'.csv')
-                    i = i + 1
-                return dict
-        else:
-            # storage:database
-            print 'Storage in database hasn''t been supported'
-            return None
+                    if cache is True: df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
+            except:
+                print "Can't get data for symbol:" + str(symbols[i])
+            i = i + 1
+        return dict
     # end of get data
+
+
+    def get_bsdata(self, online=False, cache=True):
+        if online is False:
+            return pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
+        else:
+            basics = ts.get_stock_basics()
+            if cache is True: basics.to_csv(self.data_path+'basics.csv')
+            return basics
+
 
     def norm_data(self, stkdata):
         pass
@@ -131,79 +161,51 @@ class DataManager():
         to predict the next time period — in this case defaulted to 5.
         symbs
         look_back: number of previous time steps as int
-        returns tuple of input and output dataset
-        """
-        # data_x, data_y = [], []
-        data_all = []
-        data_basic = self.get_data(data_type='B')
-        data_stock = self.get_data(symbs)
-
-        for symb in data_stock:
-            data = data_stock[symb]
-            # data = data_stock[symb][::-1] # for test
-            data = data.drop(dfeatures, axis=1)
-            for f in bfeatures:
-                data[f] = data_basic.loc[int(symb)][f]
-            data['volume'] = data['volume']/10000
-            #convert data to ndarray
-            ndata = np.array(data)
-            tndata = np.array(data[tfeatures])
-            for i in range(len(data)-look_back-1):
-                if data['high'][i] == data['low'][i]:
-                    continue # clean data of high equal to low
-                data_all.append([ndata[i:(i+look_back), :],tndata[i + look_back, :]])
-        return data_all
-
-    def create_dataset2(self, symbs, look_back=5):
-        """
-        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
-        and the `look_back`, which is the number of previous time steps to use as input variables
-        to predict the next time period — in this case defaulted to 5.
-        symbs
-        look_back: number of previous time steps as int
         returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
         """
-        print "Start to create dataset of a list of data cells of (bsdata, tsdata, rtdata, lbdata)"
+        bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
+                     'gpr', 'npr']
+        tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
+        # dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
+        tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
+        print "[ Start ] to create dataset... (bsdata, tsdata, rtdata, lbdata)"
         data_all = []
-        data_basic = self.get_data(data_type='B')
-        data_stocks = self.get_data(symbs)
+        bsset = self.get_bsdata()[bfeatures]
+        bsset = bsset[bsset['pb'] > 0]
+        symblist = intstr(list(bsset.index))
+        bsset = preprocessing.scale(bsset)
+        bsset = np.hstack([np.array(symblist).reshape(len(symblist),1), bsset])
 
-        for symb in data_stocks:
-            data_cell = []  # a data instance, for training and test
-            bsdata = [int(symb)]  # sym,...
-            tsdata = []  # time serial data
-            rtdata = [int(symb)]  # real time data, current opening price etc.
-            lbdata = [int(symb)]  # label data, day+1, day+2
+        stockset = self.get_data(symbs)
+        for symb in stockset:
+            if int(symb) not in symblist: continue
 
-            data_stock = data_stocks[symb]
-            # data_stock = data_stocks[symb][::-1] # TODO for test, revert
-            data_stock = data_stock.drop(dfeatures, axis=1)
-            ldata_stock = []
+            data_stock = stockset[symb][tsfeatures]
+            datelist = mydate(list(data_stock.index))
+            datecol = np.array(intdate(datelist)).reshape(-1,1)
 
-            # basic data
-            for f in bfeatures:
-                bsdata.append(data_basic.loc[int(symb)][f])
-                data_stock[f] = data_basic.loc[int(symb)][f] #TODO, tobe deleted
+            data_cell = []  # a data instance, for building train and test dataset
+            bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
+            for i in range(len(data_stock) - look_back - 2):
+                if data_stock['high'][i + look_back] == data_stock['low'][i + look_back]:
+                    continue  # clean data of high equal to low
+                # rtdata = []  # real time data, current opening price etc, start with symb
+                # lbdata = []  # label data, day+1, day+2, start with symb and date
 
-            data_stock['volume'] = data_stock['volume']/10000
+                dtcell = np.array(data_stock)[i:(i + look_back+2)]
+                ohcl = minmax_scale(dtcell[:,0:4])
 
-            #convert data to ndarray
-            ndata_stock = np.array(data_stock)
-            ldata_stock = np.array(data_stock[tfeatures])
-            for i in range(len(data_stock)-look_back-2):
-                if data_stock['high'][i+look_back] == data_stock['low'][i+look_back]:
-                    continue # clean data of high equal to low
-                rtdata = [int(symb)]
-                lbdata = [int(symb)]
-                tsdata = ndata_stock[i:(i+look_back), :]
-                rtdata.extend(ldata_stock[i + look_back, :])
-                lbdata.extend(ldata_stock[i + look_back + 1, :])
-                data_cell = [np.array(bsdata), tsdata, np.array(rtdata), np.array(lbdata)]
+                tsdata = np.hstack([datecol[i: i+look_back], ohcl[:-2], dtcell[:-2, 4:]])
+                rtdata = np.hstack([[int(symb)], datecol[i+look_back], ohcl[-2], dtcell[-2, 4:]])
+                lbdata = np.hstack([[int(symb)], datecol[i+look_back+1], ohcl[-1], dtcell[-1,4:]])
+                lbdata_val = np.hstack([[int(symb)], datecol[i + look_back + 1], dtcell[-1]])
+                data_cell = [bsdata, tsdata, rtdata, lbdata, lbdata_val]
                 data_all.append(data_cell)
-        print "Finish the dataset creation."
+        print "[ Finish ]"
         return data_all
 
-    def split_dataset(self, dataset, train_psize, batch_size = 1):
+
+    def split_dataset(self, dataset, train_psize, batch_size=1, seed=None):
         """
         Splits dataset into training and test datasets. The last `look_back` rows in train dataset
         will be used as `look_back` for the test dataset.
@@ -211,34 +213,21 @@ class DataManager():
         :param train_psize: specifies the percentage of train data within the whole dataset
         :return: tuple of training data and test dataset
         """
-        print "Start to split dataset into train and test"
-        np.random.seed(19801016)
+        if seed == None: seed = time.mktime(time.localtime())
+        print "[ Start ] to split dataset into train and test with seed:" + str(seed)
+        np.random.seed(int(seed))
         np.random.shuffle(dataset)
         # only take effect for array, so need to convert to numpy.array before shuffle
         # 多维矩阵中，只对第一维（行）做打乱顺序操作
         train_size = (long(len(dataset) * train_psize) / batch_size) * batch_size
-        test_size = (len(dataset)-train_size) / batch_size * batch_size
+        test_size = (len(dataset) - train_size) / batch_size * batch_size
         train = dataset[0:train_size]
-        test = dataset[train_size : train_size + test_size]
-        print('train_dataset: {}, test_dataset: {}'.format(len(train), len(test)))
+        test = dataset[train_size: train_size + test_size]
+        print('[ Finish ] train_dataset: {}, test_dataset: {}'.format(len(train), len(test)))
         return train, test
 
-    def split_label(self, dataset):
-        """
-        Splits dataset into data and labels.
-        :param dataset: source dataset, list of two elements
-        :return: tuple of training data and test dataset
-        """
-        data_x, data_y = [], []
-        for d in dataset:
-            data_x.append(d[1])
-            data_y.append(d[3])
-        data_x = np.array(data_x)
-        data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], data_x.shape[2])) #TODO can be removed?
-        data_y = np.array(data_y)
-        return data_x, data_y
 
-    def split_label2(self, dataset):
+    def create_feeddata(self, dataset):
         """
         Splits dataset into data and labels.
         :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata]
@@ -256,6 +245,7 @@ class DataManager():
         lbdata = np.array(lbdata)
         return bsdata, tsdata, rtdata, lbdata
 
+
     def catnorm_data(self, data):
         data_y = data.copy()
         data_y[data_y < -2] = 11
@@ -264,6 +254,7 @@ class DataManager():
         data_y = data_y - 11
         data_y = np_utils.to_categorical(data_y, 3)
         return data_y
+
 
     def catnorm_data2(self, data):
         data_y = data.copy()
@@ -282,6 +273,7 @@ class DataManager():
         data_y = np_utils.to_categorical(data_y, 2)
         return data_y
 
+
     def catnorm_data10(self, data):
         data_y = data.copy()
         data_y[data_y < -9] = 11
@@ -297,6 +289,7 @@ class DataManager():
         data_y = data_y - 11
         data_y = np_utils.to_categorical(data_y, 10)
         return data_y
+
 
     def get_todaydata(self, look_back=22, refresh=False, trytimes=3):
         """
@@ -318,7 +311,7 @@ class DataManager():
         cachefile = './data/todaydata' + edate.strftime('%Y%m%d') + '.npy'
         # TODO lookback aware
 
-        if refresh==False:
+        if refresh == False:
             try:
                 today_data = np.load(cachefile)
                 if today_data is not None and len(today_data) != 0:
@@ -330,7 +323,7 @@ class DataManager():
             except:
                 pass
         # in case of holidays without trading
-        sdate = edate - timedelta(days = (look_back + look_back/5 * 2 + 20))
+        sdate = edate - timedelta(days=(look_back + look_back / 5 * 2 + 20))
         edate = edate.strftime('%Y-%m-%d')
         sdate = sdate.strftime('%Y-%m-%d')
         basics = ts.get_stock_basics()
@@ -362,14 +355,16 @@ class DataManager():
                 today_data.append(ndata[len(data) - look_back:len(data)])
             trymore(trytimes - 1, failedsymbs)
             return
+
         trymore(trytimes, basics.index)
         today_data = np.array(today_data)
         np.save(cachefile, today_data)
 
         print("Get latest %i stocks info from %i stocks." % (len(today_data), len(basics)))
-        print("The following symbols can't be resolved after %i retries:"%(trytimes-1))
+        print("The following symbols can't be resolved after %i retries:" % (trytimes - 1))
         print failedsymbs
         return today_data
+
 
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points
@@ -386,15 +381,17 @@ def plot_out(sortout, x_index, y_index, points=200):
         i += 1
     plt.show()
 
+
 def test_plot():
     d = np.loadtxt("./models/2017_02_23_18_23_20/2017_02_23_18_23_20_result.txt")
     dmr.plot_out(d, 2, 3)
 
+
 def main():
     dmr = DataManager()
-    # data = dmr.create_dataset(['601866'])
-    # print '#####data samples#############'
-    # print data[0:2]
+    data = dmr.create_dataset(['601866'])
+    print '#####data samples#############'
+    print data[0:2]
 
     # train, test = dmr.split_dataset(data, 0.7)
     # print '#####train samples#############'
@@ -410,9 +407,14 @@ def main():
     # print '#####train_y samples############'
     # print data_y[0:2]
 
-    todata = dmr.get_todaydata(22, True, 10)
-    print '#####today data samples############'
-    print todata
+    # todata = dmr.get_todaydata(22, True, 10)
+    # print '#####today data samples############'
+    # print todata
+
+    # arr = ['2010-01-10','2014-12-21','2014-1-29']
+    # lst = np.array([u'2017-02-27', u'2017-02-24', u'2017-02-23', u'2017-02-22', u'2017-02-21'], dtype=object)
+    # mydate(arr)
+    # mydate(lst)
 
     # import copy
     # data = np.array(dmr.create_dataset2(['601866','600151','600152','600153'])[:3])
@@ -421,9 +423,16 @@ def main():
     # print '#####get dataset2 samples############'
     # print data
 
+    arr = np.arange(12).reshape(3,4)
+    print arr
+    a = minmax_scale(arr)
+    print a
+    print arr
+
+
+
 if __name__ == '__main__':
     main()
-
 
 """
 import DataManager as dm

@@ -14,36 +14,13 @@ rebuild = True
 import sys
 
 if __debug__:
-    params = {
-        'model_name':'Model_3',
-        'look_back':5,
-        'batch_size':256,
-        'epoch':5,
-        'stocks':3,
-        'indim':0,
-        'outdim':3
-    }
+    pass
 else:
-    params1 = {
-        'model_name':'Model_4_l5_C3',
-        'look_back':5,
-        'batch_size':256,
-        'epoch':100,
-        'stocks':2000,
-        'indim':0,
-        'outdim':3
-    }
+    pass
 
-    params3 = {
-        'model_name':'Model_4_l22_C3',
-        'look_back':22,
-        'batch_size':256,
-        'epoch':100,
-        'stocks':2000,
-        'indim':0,
-        'outdim':3
-    }
-    params2 = {
+
+def main():
+    params = {
         'model_name':'Model_4_l5_C10',
         'look_back':5,
         'batch_size':256,
@@ -52,95 +29,13 @@ else:
         'indim':0,
         'outdim':10
     }
-
-
-def main():
-    global  params
-    params = params2
-    dataset = dmr.create_dataset2(symbols[0:params['stocks']+1], params['look_back'])
-    train, test = dmr.split_dataset(dataset, 0.7, params['batch_size'])
-    bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
-    bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
-    out_y = lbdata_test.copy()
-
-    # train_x = np.hstack([bsdata_train, tsdata_train])
-    # test_x = np.hstack([bsdata_test,tsdata_test])
-    train_x = tsdata_train
-    test_x = tsdata_test
-    params['indim'] = train_x.shape[train_x.ndim-1]
-    # target to pchange_price
-    # train_y = dmr.catnorm_data(lbdata_train[:, 1])
-    # test_y = dmr.catnorm_data(lbdata_test[:, 1])
-    # if rebuild:
-    #     model = mdm.build_model4(params)
-    #     mdm.train_model(model, params, train_x, train_y, test_x, test_y)
-    # else:
-    #     try:
-    #         model = load_model('./model.h5')
-    #     except:
-    #         raise "Can't load model at: ./model.h5"
-    # mdm.predict(model, test_x, out_y, params['batch_size'], params['model_name'])
-
-    # target to pchange_price
-    # train_y = dmr.catnorm_data10(lbdata_train[:, 1])
-    # test_y = dmr.catnorm_data10(lbdata_test[:, 1])
-    # model = mdm.build_model5(params)
-    # mdm.train_model(model, params, train_x, train_y, test_x, test_y)
-    # mdm.predict(model, test_x, out_y, params['batch_size'], params['model_name'])
-    #
-    # params = params2
-    # model = mdm.build_model4(params)
-    # mdm.train_model(model, params, train_x, train_y, test_x, test_y)
-    # mdm.predict(model, test_x, out_y, params['batch_size'], params['model_name'])
-
-    params = params1
-    params['indim'] = train_x.shape[train_x.ndim - 1]
-    # target to pchange_price
-    train_y = dmr.catnorm_data(rtdata_train[:, 1])
-    test_y = dmr.catnorm_data(rtdata_test[:, 1])
-    model = mdm.build_model4(params)
-    mdm.train_model(model, params, train_x, train_y, test_x, test_y)
-    mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
-
-    # todaydata = dmr.get_todaydata(look_back=5, refresh=False)
-    # mdm.predict_today(model, todaydata, batch_size)
     return
 
-# def main2():
-#     # dmr.refresh_data(data_type='BH', trytimes=10)
-#     dataset = dmr.create_dataset(symbols[0:stocks], look_back)
-#     train, test = dmr.split_dataset(dataset, 0.7, batch_size)
-#     train_x, train_y = dmr.split_label(train)
-#     test_x, test_y = dmr.split_label(test)
-#     out_y = test_y.copy()
-#     # target to pchange_price
-#     train_y = dmr.catnorm_data(train_y[:, 0])
-#     test_y = dmr.catnorm_data(test_y[:, 0])
-#     if rebuild:
-#         model = mdm.build_model(look_back, batch_size, train_x.shape[2], train_y.shape[1])
-#         callback = model.fit(train_x, train_y, batch_size=batch_size, nb_epoch=epoch, validation_data=(test_x, test_y))
-#         if not __debug__:
-#             #Save models and metrics
-#             save_model(model, './models/' + signature+'.h5')
-#             # save_model(model, './models/latest.h5')
-#             hist = dict(callback.history)
-#             for key in hist.keys():
-#                 np.savetxt("./models/"+signature+"_"+key+".txt", hist[key])
-#     else:
-#         try:
-#             model = load_model('./models/latest.h5')
-#         except:
-#             raise "Can't load model at: ./models/latest.h5"
-#
-#     mdm.predict_d(model, test_x, out_y, batch_size)
-#
-#     # todaydata = dmr.get_todaydata(look_back=5, refresh=False)
-#     # mdm.predict_today(model, todaydata, batch_size)
 
 
-def Model_6_l5_C3():
+def M6T5C3():
     params = {
-        'model_name':'Model_6_l5_C3',
+        'model_name':'M6T5C3',
         'look_back':5,
         'batch_size':128,
         'epoch':60,
@@ -148,7 +43,7 @@ def Model_6_l5_C3():
         'indim':0,
         'outdim':3
     }
-    dataset = dmr.create_dataset2(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
     train, test = dmr.split_dataset(dataset, 0.7, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -165,9 +60,10 @@ def Model_6_l5_C3():
     # mdm.predict_today(model, todaydata, batch_size)
     return
 
-def Model_6_l22_C3():
+
+def M6T5C3():
     params = {
-        'model_name':'Model_6_l5_C3',
+        'model_name':'M6T5C3',
         'look_back':22,
         'batch_size':128,
         'epoch':60,
@@ -175,7 +71,7 @@ def Model_6_l22_C3():
         'indim':0,
         'outdim':3
     }
-    dataset = dmr.create_dataset2(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -193,9 +89,9 @@ def Model_6_l22_C3():
     return
 
 
-def Model_4_l22_C2():
+def M4T22C2():
     params = {
-        'model_name':'Model_4_l22_C2',
+        'model_name':'M4T22C2',
         'look_back':22,
         'batch_size':128,
         'epoch':60,
@@ -204,7 +100,7 @@ def Model_4_l22_C2():
         'outdim':2,
         'cat_func':dmr.catnorm_data2test
     }
-    dataset = dmr.create_dataset2(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -222,9 +118,9 @@ def Model_4_l22_C2():
     # mdm.predict_today(model, todaydata, batch_size)
     return
 
-def M1L5C3():
+def M1T5C3():
     params = {
-        'model_name': 'M1L5C3_2',
+        'model_name': 'M1T5C3_2',
         'look_back': 5,
         'batch_size': 256,
         'epoch': 120,
@@ -233,7 +129,7 @@ def M1L5C3():
         'outdim': 3,
         'cat_func': dmr.catnorm_data
     }
-    dataset = dmr.create_dataset2(symbols[0:params['stocks'] + 1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -250,8 +146,74 @@ def M1L5C3():
     # mdm.predict_d(model, test_x, rtdata_test, params['batch_size'])
 
 
+def M1T10C3():
+    params = {
+        'model_name': 'M1T5C3_2',
+        'look_back': 5,
+        'batch_size': 256,
+        'epoch': 120,
+        'stocks': 100,
+        'indim': 0,
+        'outdim': 3,
+        'cat_func': dmr.catnorm_data
+    }
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
+    train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
+    bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
+    bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
 
-def predict_today():
+    opent1_train = rtdata_train[:,2].reshape(-1,1)
+    lbdata_train = (lbdata_train[:,2:] - opent1_train)/opent1_train * 10
+
+    opent1_test = rtdata_test[:,2].reshape(-1,1)
+    lbdata_test = (lbdata_test[:,2:] - opent1_test)/opent1_test * 10
+
+    train_x = tsdata_train[:,1]
+    test_x = tsdata_test[:,1]
+    train_y = params['cat_func'](lbdata_train[:, 2])
+    test_y = params['cat_func'](lbdata_test[:, 2])
+    params['indim'] = train_x.shape[train_x.ndim - 1]
+    model = mdm.build_model(params)
+    mdm.train_model(model, params, [train_x, ], train_y, test_x, test_y)
+    mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
+    mdm.predict(model, train_x, rtdata_train, params['batch_size'], params['model_name']+'_train')
+
+
+def M1T5C2():
+    params = {
+        'model_name': 'M1T5C2',
+        'look_back': 5,
+        'batch_size': 256,
+        'epoch': 120,
+        'stocks': 100,
+        'indim': 0,
+        'outdim': 3,
+        'cat_func': dmr.catnorm_data
+    }
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
+    train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
+    bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.create_feeddata(train)
+    bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.create_feeddata(test)
+
+    # closed1_train = rtdata_train[:,-1].reshape(-1,1)
+    # closed0_train = tsdata_train[:,-1,-1].reshape(-1,1)
+    # train_y = (closed1_train - closed0_train)#/closed0_train * 100
+    #
+    # closed1_test = rtdata_test[:,-1].reshape(-1,1)
+    # closed0_test = tsdata_test[:,-1,-1].reshape(-1,1)
+    # test_y = (closed1_test - closed0_test)#/closed0_test * 100
+
+    train_x = tsdata_train[:,:,1:]
+    test_x = tsdata_test[:,:,1:]
+    train_y = rtdata_train[:, -2]
+    train_y = params['cat_func'](rtdata_train[:, -2])
+    test_y = params['cat_func'](rtdata_test[:,-2])
+    params['indim'] = train_x.shape[train_x.ndim - 1]
+    model = mdm.build_model(params)
+    mdm.train_model(model, params, train_x, train_y, test_x, test_y)
+    mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
+
+def MTODAY():
     try:
         model = load_model('./models/latest.h5')
     except:
@@ -261,20 +223,9 @@ def predict_today():
 
 
 def _main_():
-    model_map = {
-        'Model_6_l5_C3': Model_6_l5_C3,
-        'Model_6_l22_C3': Model_6_l22_C3,
-        'Model_4_l22_C2': Model_4_l22_C2,
-        'M1L5C3': M1L5C3,
-
-    }
     for i in range(1, len(sys.argv)):
-        if sys.argv[i] in model_map.keys():
-            model_map[sys.argv[i]]()
+        eval(sys.argv[i])()
 
 if __name__ == '__main__':
-    # Model_4_l22_C2()
-    # dmr.refresh_data(trytimes=10)
-    # main_old()
-    _main_()
-
+    # _main_()
+    M1T5C2()
