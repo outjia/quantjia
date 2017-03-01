@@ -124,27 +124,27 @@ class DataManager():
 
     # end of refresh_data
 
-    def get_data(self, symbols=None, online=False, cache=True):
+    def get_data(self, symbols=None, online=False, cache=True, start = None):
         print ("[ get_data ]... for %i symbols online(%s)" %(len(symbols), str(online)))
         if symbols is None: return
         dict = {}
         i = 0
         while i < len(symbols):
             try:
-                if online is False:
+                if online:
+                    df = ts.get_hist_data(symbols[i], start)
+                    dict[symbols[i]] = df[::-1]
+                    if cache: df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
+                else:
                     dict[symbols[i]] = pd.read_csv(self.data_path + 'daily/' + symbols[i] + '.csv', index_col=0,
                                                    dtype={'code': str})
-                else:
-                    df = ts.get_hist_data(symbols[i])
-                    dict[symbols[i]] = df[::-1]
-                    if cache is True: df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
             except:
                 print "Can't get data for symbol:" + str(symbols[i])
             i = i + 1
         return dict
     # end of get data
 
-    def get_bsdata(self, online=False, cache=True):
+    def get_bsdata(self, online=False, cache=False):
         print ("[ get_bsdata ]... online(%s)"%(str(online)))
         if online is False:
             return pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
@@ -153,16 +153,13 @@ class DataManager():
             if cache is True: basics.to_csv(self.data_path+'basics.csv')
             return basics
 
-    def norm_data(self, stkdata):
-        pass
-
-    def create_dataset(self, symbs, look_back=5):
+    def create_dataset(self, symbs, lookback=5, todaydata=False):
         """
         The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
-        and the `look_back`, which is the number of previous time steps to use as input variables
+        and the `lookback`, which is the number of previous time steps to use as input variables
         to predict the next time period — in this case defaulted to 5.
         symbs
-        look_back: number of previous time steps as int
+        lookback: number of previous time steps as int
         returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
         """
 
@@ -181,24 +178,20 @@ class DataManager():
             data_stock = stockset[symb][tsfeatures]
             datelist = mydate(list(data_stock.index))
             datecol = np.array(intdate(datelist)).reshape(-1,1)
-
-            data_cell = []  # a data instance, for building train and test dataset
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
-            for i in range(len(data_stock) - look_back - 2):
-                if data_stock['high'][i + look_back] == data_stock['low'][i + look_back]:
+            for i in range(len(data_stock) - lookback - 2):
+                if data_stock['high'][i + lookback] == data_stock['low'][i + lookback]:
                     continue  # clean data of high equal to low
-                # rtdata = []  # real time data, current opening price etc, start with symb
-                # lbdata = []  # label data, day+1, day+2, start with symb and date
 
-                dtcell = np.array(data_stock)[i:(i + look_back+2)]
+                dtcell = np.array(data_stock)[i:(i + lookback+2)]
                 ohcl = minmax_scale(dtcell[:,0:4])
 
-                tsdata = np.hstack([datecol[i: i+look_back], ohcl[:-2], dtcell[:-2, 4:]])
-                tsdata_v = np.hstack([datecol[i: i+look_back], dtcell[:-2,:]])
-                rtdata = np.hstack([[int(symb)], datecol[i+look_back], ohcl[-2], dtcell[-2, 4:]])
-                rtdata_v = np.hstack([[int(symb)], datecol[i+look_back], dtcell[-2]])
-                lbdata = np.hstack([[int(symb)], datecol[i+look_back+1], ohcl[-1], dtcell[-1,4:]])
-                lbdata_v = np.hstack([[int(symb)], datecol[i + look_back + 1], dtcell[-1]])
+                tsdata = np.hstack([datecol[i: i+lookback], ohcl[:-2], dtcell[:-2, 4:]])
+                tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-2,:]])
+                rtdata = np.hstack([[int(symb)], datecol[i+lookback], ohcl[-2], dtcell[-2, 4:]])
+                rtdata_v = np.hstack([[int(symb)], datecol[i+lookback], dtcell[-2]])
+                lbdata = np.hstack([[int(symb)], datecol[i+lookback+1], ohcl[-1], dtcell[-1,4:]])
+                lbdata_v = np.hstack([[int(symb)], datecol[i + lookback + 1], dtcell[-1]])
                 data_cell = [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
                 data_all.append(data_cell)
         print "[ Finish ]"
@@ -207,8 +200,8 @@ class DataManager():
 
     def split_dataset(self, dataset, train_psize, batch_size=1, seed=None):
         """
-        Splits dataset into training and test datasets. The last `look_back` rows in train dataset
-        will be used as `look_back` for the test dataset.
+        Splits dataset into training and test datasets. The last `lookback` rows in train dataset
+        will be used as `lookback` for the test dataset.
         :param dataset: source dataset
         :param train_psize: specifies the percentage of train data within the whole dataset
         :return: tuple of training data and test dataset
@@ -298,7 +291,7 @@ class DataManager():
         return data_y
 
 
-    def get_todaydata(self, look_back=22, refresh=False, trytimes=3):
+    def get_todaydata(self, lookback=22, refresh=False, trytimes=3):
         """
         Splits dataset into data and labels.
         :param dataset: source dataset, list of two elements
@@ -329,7 +322,7 @@ class DataManager():
             except:
                 pass
         # in case of holidays without trading
-        sdate = edate - timedelta(days=(look_back + look_back / 5 * 2 + 20))
+        sdate = edate - timedelta(days=(lookback + lookback / 5 * 2 + 20))
         edate = edate.strftime('%Y-%m-%d')
         sdate = sdate.strftime('%Y-%m-%d')
         basics = ts.get_stock_basics()
@@ -347,7 +340,7 @@ class DataManager():
                     failedsymbs.append(symb)
                     continue
 
-                if len(data) < look_back or data['high'][-1] == data['low'][-1]: continue
+                if len(data) < lookback or data['high'][-1] == data['low'][-1]: continue
                 if data.index[0] != edate: continue
                 data = data.drop(dfeatures, axis=1)
                 for f in bfeatures:
@@ -358,7 +351,7 @@ class DataManager():
 
                 # convert data to ndarray
                 ndata = np.array(data)
-                today_data.append(ndata[len(data) - look_back:len(data)])
+                today_data.append(ndata[len(data) - lookback:len(data)])
             trymore(trytimes - 1, failedsymbs)
             return
 
@@ -371,6 +364,59 @@ class DataManager():
         print failedsymbs
         return today_data
 
+    def create_today_dataset(self, lookback=5):
+        """
+        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+        and the `lookback`, which is the number of previous time steps to use as input variables
+        to predict the next time period — in this case defaulted to 5.
+        symbs
+        lookback: number of previous time steps as int
+        returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
+        """
+        rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
+        data_all = []
+        print ("[ create today's dataset ]...")
+        sdate = datetime.date.today() - timedelta(days=30)
+        sdate = sdate.strftime('%Y-%m-%d')
+
+        # get basic data(array) for all stocks
+        bsset = self.get_bsdata()[bfeatures]
+        bsset = bsset[bsset['pb'] > 0]
+        symblist = intstr(list(bsset.index))
+        bsset = preprocessing.scale(bsset)
+        bsset = np.hstack([np.array(symblist).reshape(len(symblist),1), bsset])
+
+        # get real time data(array) for all stocks
+        rtdata_df = ts.get_today_all()[rtlabels]
+        symbs = rtdata_df['code']
+        rtset = np.array(rtdata_df.astype(float))
+
+        tsdata_dict = self.get_data(symbs, True, False, sdate)
+        for symb in tsdata_dict:
+            if int(symb) not in symblist: continue
+
+            tsdata_df= tsdata_dict[symb][tsfeatures]
+            datelist = mydate(list(tsdata_df.index))
+            datecol = np.array(intdate(datelist)).reshape(-1,1)
+            bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
+            rtdata_v = rtset[rtset[:,0] == int(symb)][0]
+            if len(tsdata_df) >= lookback:
+                if rtdata_v[1] == rtdata_v[3]: continue  # clean data of high equal to low
+
+                dtcell = np.array(tsdata_df)[-lookback:]
+                rtdata_v = rtdata_v[1:,:]
+                dtcell = np.vstack([dtcell, rtdata_v])
+                ohcl = minmax_scale(dtcell[:,0:4])
+
+                tsdata = np.hstack([datecol[-lookback:], ohcl[:-1], dtcell[:-1, 4:]])
+                tsdata_f = np.hstack([datecol[-lookback:], ohcl, dtcell[:, 4:]])
+                tsdata_v = np.hstack([datecol[-lookback:], dtcell[:-1,:]])
+                rtdata = np.hstack([[int(symb)], datecol[-lookback:], ohcl[-1], dtcell[-1, 4:]])
+                rtdata_v = np.hstack([[int(symb)], datecol[-lookback:], dtcell[-1]])
+
+                data_cell = [bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f]
+                data_all.append(data_cell)
+        return data_all
 
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points

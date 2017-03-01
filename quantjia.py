@@ -22,7 +22,7 @@ else:
 def main():
     params = {
         'model_name':'Model_4_l5_C10',
-        'look_back':5,
+        'lookback':5,
         'batch_size':256,
         'epoch':100,
         'stocks':2000,
@@ -36,14 +36,14 @@ def main():
 def M6T5C3():
     params = {
         'model_name':'M6T5C3',
-        'look_back':5,
+        'lookback':5,
         'batch_size':128,
         'epoch':60,
         'stocks':500,
         'indim':0,
         'outdim':3
     }
-    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.7, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -56,7 +56,7 @@ def M6T5C3():
     mdm.train_model(model, params, train_x, train_y, test_x, test_y)
     mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
 
-    # todaydata = dmr.get_todaydata(look_back=5, refresh=False)
+    # todaydata = dmr.get_todaydata(lookback=5, refresh=False)
     # mdm.predict_today(model, todaydata, batch_size)
     return
 
@@ -64,14 +64,14 @@ def M6T5C3():
 def M6T5C3():
     params = {
         'model_name':'M6T5C3',
-        'look_back':22,
+        'lookback':22,
         'batch_size':128,
         'epoch':60,
         'stocks':500,
         'indim':0,
         'outdim':3
     }
-    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -84,7 +84,7 @@ def M6T5C3():
     mdm.train_model(model, params, train_x, train_y, test_x, test_y)
     mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
 
-    # todaydata = dmr.get_todaydata(look_back=5, refresh=False)
+    # todaydata = dmr.get_todaydata(lookback=5, refresh=False)
     # mdm.predict_today(model, todaydata, batch_size)
     return
 
@@ -92,7 +92,7 @@ def M6T5C3():
 def M4T22C2():
     params = {
         'model_name':'M4T22C2',
-        'look_back':22,
+        'lookback':22,
         'batch_size':128,
         'epoch':60,
         'stocks':50,
@@ -100,7 +100,7 @@ def M4T22C2():
         'outdim':2,
         'cat_func':dmr.catnorm_data2test
     }
-    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks']+1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -114,14 +114,14 @@ def M4T22C2():
     mdm.predict(model, test_x, rtdata_test, params['batch_size'], params['model_name'])
     mdm.predict(model, train_x, rtdata_train, params['batch_size'], params['model_name']+'_train')
 
-    # todaydata = dmr.get_todaydata(look_back=5, refresh=False)
+    # todaydata = dmr.get_todaydata(lookback=5, refresh=False)
     # mdm.predict_today(model, todaydata, batch_size)
     return
 
 def M1T5C3():
     params = {
         'model_name': 'M1T5C3_2',
-        'look_back': 5,
+        'lookback': 5,
         'batch_size': 256,
         'epoch': 120,
         'stocks': 100,
@@ -129,7 +129,7 @@ def M1T5C3():
         'outdim': 3,
         'cat_func': dmr.catnorm_data
     }
-    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -149,7 +149,7 @@ def M1T5C3():
 def M1T10C3():
     params = {
         'model_name': 'M1T5C3_2',
-        'look_back': 5,
+        'lookback': 5,
         'batch_size': 256,
         'epoch': 120,
         'stocks': 100,
@@ -157,7 +157,7 @@ def M1T10C3():
         'outdim': 3,
         'cat_func': dmr.catnorm_data
     }
-    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bsdata_train, tsdata_train, rtdata_train, lbdata_train = dmr.split_label2(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test = dmr.split_label2(test)
@@ -182,7 +182,7 @@ def M1T10C3():
 def M1T5C2():
     params = {
         'model_name': 'M1T5C2_D2',
-        'look_back': 5,
+        'lookback': 5,
         'batch_size': 256,
         'epoch': 100,
         'stocks': 300,
@@ -191,7 +191,7 @@ def M1T5C2():
         'cat_func': dmr.catnorm_data
     }
     # dmr.get_bsdata(True)
-    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['look_back'])
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'],1488290043)
     bsdata_train, tsdata_train, rtdata_train, lbdata_train, tsdata_train_v, rtdata_train_v, lbdata_train_v = dmr.create_feeddata(train)
     bsdata_test, tsdata_test, rtdata_test, lbdata_test, tsdata_test_v, rtdata_test_v, lbdata_test_v = dmr.create_feeddata(test)
@@ -214,12 +214,32 @@ def M1T5C2():
     model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
     mdm.predict(model, test_x, np.hstack([rtdata_test_v,lbdata_test_v[:,2:]]), params['batch_size'], params['model_name'])
 
+
+def predict_today(mname):
+    # M1T5B256C3
+    # build_model1, lookback=5, batchsize = 256, cat_function = dmr.cat3
+    params = {
+        'model_name': 'M1T5C2_D2',
+        'lookback': 5,
+        'batch_size': 256,
+        'epoch': 100,
+        'stocks': 300,
+        'indim': 0,
+        'outdim': 3,
+        'cat_func': dmr.catnorm_data
+    }
+    lookback = 5
+    # get today's data
+    bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f = dmr.create_today_dataset(lookback)
+    model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
+    mdm.predict(model, tsdata_f[:,-lookback:,1:], rtdata_v, params['batch_size'], params['model_name'])
+
 def MTODAY():
     try:
         model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
     except:
         raise "Can't load model at: ./models/model.h5"
-    todaydata = dmr.get_todaydata(look_back=5, refresh=False)
+    todaydata = dmr.get_todaydata(lookback=5, refresh=False)
     mdm.predict(model, todaydata, 256)
 
 

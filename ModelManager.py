@@ -74,13 +74,13 @@ def tpfn_metrics(y_true, y_pred):
 def build_model(params):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :return: keras Sequential model
     """
 
     print "[ build_model ]... with params" + str(params)
-    look_back = params['look_back']
+    lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
@@ -88,7 +88,7 @@ def build_model(params):
     model = Sequential()
     model.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.3))
@@ -100,17 +100,17 @@ def build_model(params):
     print "Finish building model"
     return model
 
-def build_model2(look_back, batch_size, input_dim, output_dim):
+def build_model2(lookback, batch_size, input_dim, output_dim):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :return: keras Sequential model
     """
     rrnmodel = Sequential()
     rrnmodel.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
                   return_sequences=False))
     rrnmodel.add(Dropout(0.3))
@@ -132,14 +132,14 @@ def build_model2(look_back, batch_size, input_dim, output_dim):
 def build_model3(params):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :param input_dim: input dimension as int
     :param output_dim: outpu dimension as int
     :return: keras Sequential model
     """
 
-    look_back = params['look_back']
+    lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
@@ -147,7 +147,7 @@ def build_model3(params):
     model = Sequential()
     model.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.3))
@@ -161,14 +161,14 @@ def build_model3(params):
 def build_model4(params):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :param input_dim: input dimension as int
     :param output_dim: outpu dimension as int
     :return: keras Sequential model
     """
 
-    look_back = params['look_back']
+    lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
@@ -176,7 +176,7 @@ def build_model4(params):
     model = Sequential()
     model.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=False,
                   return_sequences=False))
     model.add(Dropout(0.5))
@@ -190,14 +190,14 @@ def build_model4(params):
 def build_model6(params):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :param input_dim: input dimension as int
     :param output_dim: outpu dimension as int
     :return: keras Sequential model
     """
 
-    look_back = params['look_back']
+    lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
@@ -205,7 +205,7 @@ def build_model6(params):
     model = Sequential()
     model.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.5))
@@ -214,17 +214,18 @@ def build_model6(params):
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['precision', 'categorical_accuracy', 'fmeasure',top_t1p1_class])
     return model
 
+
 def build_model5(params):
     """
     The function builds a keras Sequential model
-    :param look_back: number of previous time steps as int
+    :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :param input_dim: input dimension as int
     :param output_dim: outpu dimension as int
     :return: keras Sequential model
     """
 
-    look_back = params['look_back']
+    lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
@@ -232,7 +233,7 @@ def build_model5(params):
     model = Sequential()
     model.add(GRU(64,
                   activation='tanh',
-                  batch_input_shape=(batch_size, look_back, input_dim),
+                  batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.5))
@@ -242,6 +243,7 @@ def build_model5(params):
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['precision', 'categorical_accuracy', 'fmeasure',top_t4p1_class])
     return model
+
 
 def train_model(model, params, train_x, train_y, test_x=None, test_y=None):
     print "[ Train model ]..."
