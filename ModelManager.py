@@ -79,7 +79,7 @@ def build_model(params):
     :return: keras Sequential model
     """
 
-    print "Start to build model with params" + str(params)
+    print "[ build_model ]... with params" + str(params)
     look_back = params['look_back']
     batch_size = params['batch_size']
     input_dim = params['indim']
@@ -244,7 +244,7 @@ def build_model5(params):
     return model
 
 def train_model(model, params, train_x, train_y, test_x=None, test_y=None):
-    print "Start to train model"
+    print "[ Train model ]..."
     callback = model.fit(train_x, train_y, batch_size=params['batch_size'], nb_epoch=params['epoch'], validation_data=(test_x, test_y))
     if not __debug__:
         # Save models and metrics
@@ -280,7 +280,7 @@ def predict(model, data_x, data_y=None, batch_size = 128, model_name=None):
     :param model_name: the file name for store the prediction output, default value is the current date
     :return: prediction output
     """
-    print "Start to predict using trained model"
+    print "[ predict ]... using model %s" +model_name
     if model.stateful:
         data_x = data_x[:len(data_x) / batch_size * batch_size]
     proba = model.predict_proba(data_x, verbose=0, batch_size=batch_size)
@@ -297,9 +297,8 @@ def predict(model, data_x, data_y=None, batch_size = 128, model_name=None):
     else:
         filename=model_name
     if not __debug__:
-        np.savetxt("./models/" + filename + "_result.txt", sortout, fmt='%f')
+        np.savetxt("./models/" + filename + "/result.txt", sortout, fmt='%f')
     else:
         print sortout[0:200, 0:5]
-    print "Finish the prediction"
     return sortout
 

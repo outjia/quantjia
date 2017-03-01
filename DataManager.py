@@ -16,6 +16,7 @@ import time
 import numpy as np
 import pandas as pd
 import tushare as ts
+import matplotlib as plt
 from datetime import timedelta
 from datetime import date
 from keras.utils import np_utils
@@ -25,6 +26,11 @@ import keras.backend as K
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
              'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
              'npr', 'holders']
+bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
+             'gpr', 'npr']
+tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
+dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
+tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
 def mydate(datestr):
     if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
@@ -82,7 +88,7 @@ class DataManager():
     def refresh_data(self, start='2005-01-01', trytimes=10):
         # refresh history data
         # trytimes, times to try
-
+        print ("[ refresh_data ]... start date:%s"%(start))
         basics = ts.get_stock_basics()
         basics.to_csv(self.data_path + 'basics.csv')
         all_data = ts.get_today_all()
@@ -118,10 +124,8 @@ class DataManager():
 
     # end of refresh_data
 
-
-
     def get_data(self, symbols=None, online=False, cache=True):
-        # get data
+        print ("[ get_data ]... for %i symbols online(%s)" %(len(symbols), str(online)))
         if symbols is None: return
         dict = {}
         i = 0
@@ -140,8 +144,8 @@ class DataManager():
         return dict
     # end of get data
 
-
     def get_bsdata(self, online=False, cache=True):
+        print ("[ get_bsdata ]... online(%s)"%(str(online)))
         if online is False:
             return pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
         else:
@@ -149,10 +153,8 @@ class DataManager():
             if cache is True: basics.to_csv(self.data_path+'basics.csv')
             return basics
 
-
     def norm_data(self, stkdata):
         pass
-
 
     def create_dataset(self, symbs, look_back=5):
         """
@@ -163,12 +165,8 @@ class DataManager():
         look_back: number of previous time steps as int
         returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
         """
-        bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
-                     'gpr', 'npr']
-        tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
-        # dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
-        tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
-        print "[ Start ] to create dataset... (bsdata, tsdata, rtdata, lbdata)"
+
+        print "[ create_dataset ]... "
         data_all = []
         bsset = self.get_bsdata()[bfeatures]
         bsset = bsset[bsset['pb'] > 0]
@@ -196,10 +194,12 @@ class DataManager():
                 ohcl = minmax_scale(dtcell[:,0:4])
 
                 tsdata = np.hstack([datecol[i: i+look_back], ohcl[:-2], dtcell[:-2, 4:]])
+                tsdata_v = np.hstack([datecol[i: i+look_back], dtcell[:-2,:]])
                 rtdata = np.hstack([[int(symb)], datecol[i+look_back], ohcl[-2], dtcell[-2, 4:]])
+                rtdata_v = np.hstack([[int(symb)], datecol[i+look_back], dtcell[-2]])
                 lbdata = np.hstack([[int(symb)], datecol[i+look_back+1], ohcl[-1], dtcell[-1,4:]])
-                lbdata_val = np.hstack([[int(symb)], datecol[i + look_back + 1], dtcell[-1]])
-                data_cell = [bsdata, tsdata, rtdata, lbdata, lbdata_val]
+                lbdata_v = np.hstack([[int(symb)], datecol[i + look_back + 1], dtcell[-1]])
+                data_cell = [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
                 data_all.append(data_cell)
         print "[ Finish ]"
         return data_all
@@ -214,7 +214,7 @@ class DataManager():
         :return: tuple of training data and test dataset
         """
         if seed == None: seed = time.mktime(time.localtime())
-        print "[ Start ] to split dataset into train and test with seed:" + str(seed)
+        print "[ split_dateset ]... into train and test with seed:" + str(seed)
         np.random.seed(int(seed))
         np.random.shuffle(dataset)
         # only take effect for array, so need to convert to numpy.array before shuffle
@@ -230,20 +230,27 @@ class DataManager():
     def create_feeddata(self, dataset):
         """
         Splits dataset into data and labels.
-        :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata]
-        :return: tuple of (bsdata, tsdata, rtdata, lbdata)
+        :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
+        :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
         """
-        bsdata, tsdata, rtdata, lbdata = [], [], [], []
+        print "[ create_feeddata ]..."
+        bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v = [], [], [], [], [], [], []
         for d in dataset:
             bsdata.append(d[0])
             tsdata.append(d[1])
             rtdata.append(d[2])
             lbdata.append(d[3])
+            tsdata_v.append(d[4])
+            rtdata_v.append(d[5])
+            lbdata_v.append(d[6])
         bsdata = np.array(bsdata)
         tsdata = np.array(tsdata)
         rtdata = np.array(rtdata)
         lbdata = np.array(lbdata)
-        return bsdata, tsdata, rtdata, lbdata
+        tsdata_v = np.array(tsdata_v)
+        rtdata_v = np.array(rtdata_v)
+        lbdata_v = np.array(lbdata_v)
+        return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v
 
 
     def catnorm_data(self, data):
@@ -297,6 +304,7 @@ class DataManager():
         :param dataset: source dataset, list of two elements
         :return: data_x of predication, the last column is the symb code
         """
+        print ("[ get_todaydata ]...whith refresh %s"%str(refresh))
         sdate = None
         edate = None
         today_data = []
@@ -308,18 +316,16 @@ class DataManager():
             edate = datetime.date.today()
         else:
             edate = datetime.date.today() - timedelta(days=1)
-        cachefile = './data/todaydata' + edate.strftime('%Y%m%d') + '.npy'
-        # TODO lookback aware
+        cachefile = './data/todaydata/' + edate.strftime('%Y%m%d') + '.npy'
 
-        if refresh == False:
+        if refresh is False:
             try:
                 today_data = np.load(cachefile)
                 if today_data is not None and len(today_data) != 0:
                     print "Get today data from cache"
-                    # TODO customize data to param lookback
                     return today_data
                 else:
-                    pass
+                    print "Warning, can't get today data from cache"
             except:
                 pass
         # in case of holidays without trading
@@ -384,7 +390,7 @@ def plot_out(sortout, x_index, y_index, points=200):
 
 def test_plot():
     d = np.loadtxt("./models/2017_02_23_18_23_20/2017_02_23_18_23_20_result.txt")
-    dmr.plot_out(d, 2, 3)
+    plot_out(d, 2, 3)
 
 
 def main():
