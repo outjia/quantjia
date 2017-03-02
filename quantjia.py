@@ -1,11 +1,14 @@
 # coding=utf-8
 
 import time
+import datetime
+import os
 import numpy as np
 import DataManager as dm
 import ModelManager as mdm
 import Symbols
 from keras.models import load_model
+from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
 
 dmr = dm.DataManager()
 signature = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
@@ -215,7 +218,78 @@ def M1T5C2():
     mdm.predict(model, test_x, np.hstack([rtdata_test_v,lbdata_test_v[:,2:]]), params['batch_size'], params['model_name'])
 
 
-def predict_today(mname):
+def M1T5C3_D1():
+    params = {
+        'model_name': 'M1T5C3_D1',
+        'lookback': 5,
+        'batch_size': 256,
+        'epoch': 100,
+        'stocks': 3100,
+        'indim': 0,
+        'outdim': 3,
+        'cat_func': dmr.catnorm_data
+    }
+    # dmr.get_bsdata(True)
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['lookback'])
+    train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
+    bsdata_train, tsdata_train, rtdata_train, lbdata_train, tsdata_train_v, rtdata_train_v, lbdata_train_v, tsdata_train_f= dmr.create_feeddata(train)
+    bsdata_test, tsdata_test, rtdata_test, lbdata_test, tsdata_test_v, rtdata_test_v, lbdata_test_v, tsdata_test_f  = dmr.create_feeddata(test)
+    train_x = tsdata_train_f[:,1:,1:]
+    test_x = tsdata_test_f[:,1:,1:]
+    train_y = params['cat_func'](lbdata_train_v[:, -2])
+    test_y = params['cat_func'](lbdata_test_v[:,-2])
+    params['indim'] = train_x.shape[train_x.ndim - 1]
+
+    path = 'models/' + params['model_name']
+    model_dir = os.path.dirname(path+'/logs/')
+    if not os.path.exists(model_dir): os.makedirs(model_dir)
+    callbacks = [
+        EarlyStopping(monitor='top_t1p1_class', patience=6, verbose=0),
+        ModelCheckpoint(path+'logs', monitor='val_loss', save_best_only=True, verbose=0),
+        TensorBoard(log_dir=path+'/logs', histogram_freq=0, write_graph=True, write_images=False),
+    ]
+    model = mdm.build_model(params)
+    mdm.train_model(model, params, train_x, train_y, callbacks,  test_x, test_y)
+    # model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
+    mdm.predict(model, test_x, np.hstack([rtdata_test_v,lbdata_test_v[:,2:]]), params['batch_size'], params['model_name'])
+
+def M1T5C3_D1_002():
+    params = {
+        'model_name': 'M1T5C3_D1_002',
+        'lookback': 10,
+        'batch_size': 256,
+        'epoch': 100,
+        'stocks': 3100,
+        'indim': 0,
+        'outdim': 3,
+        'cat_func': dmr.catnorm_data
+    }
+    # dmr.get_bsdata(True)
+    dataset = dmr.create_dataset(symbols[0:params['stocks'] + 1], params['lookback'])
+    train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
+    bsdata_train, tsdata_train, rtdata_train, lbdata_train, tsdata_train_v, rtdata_train_v, lbdata_train_v, tsdata_train_f= dmr.create_feeddata(train)
+    bsdata_test, tsdata_test, rtdata_test, lbdata_test, tsdata_test_v, rtdata_test_v, lbdata_test_v, tsdata_test_f  = dmr.create_feeddata(test)
+    train_x = tsdata_train_f[:,1:,1:]
+    test_x = tsdata_test_f[:,1:,1:]
+    train_y = params['cat_func'](lbdata_train_v[:, -2])
+    test_y = params['cat_func'](lbdata_test_v[:,-2])
+    params['indim'] = train_x.shape[train_x.ndim - 1]
+
+    path = 'models/' + params['model_name']
+    model_dir = os.path.dirname(path+'/logs/')
+    if not os.path.exists(model_dir): os.makedirs(model_dir)
+    callbacks = [
+        EarlyStopping(monitor='top_t1p1_class', patience=5, verbose=0),
+        ModelCheckpoint(path+'logs', monitor='val_loss', save_best_only=True, verbose=0),
+        TensorBoard(log_dir=path+'/logs', histogram_freq=0, write_graph=True, write_images=False),
+    ]
+    model = mdm.build_model(params)
+    mdm.train_model(model, params, train_x, train_y, callbacks,  test_x, test_y)
+    # model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
+    mdm.predict(model, test_x, np.hstack([rtdata_test_v,lbdata_test_v[:,2:]]), params['batch_size'], params['model_name'])
+
+
+def predict_today():
     # M1T5B256C3
     # build_model1, lookback=5, batchsize = 256, cat_function = dmr.cat3
     params = {
@@ -223,7 +297,7 @@ def predict_today(mname):
         'lookback': 5,
         'batch_size': 256,
         'epoch': 100,
-        'stocks': 300,
+        'stocks': 1000,
         'indim': 0,
         'outdim': 3,
         'cat_func': dmr.catnorm_data
@@ -232,7 +306,10 @@ def predict_today(mname):
     # get today's data
     bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f = dmr.create_today_dataset(lookback)
     model = load_model('./models/model.h5',custom_objects={'top_t1p1_class':mdm.top_t1p1_class})
+    # if 20 > datetime.datetime.now().hour > 9:
     mdm.predict(model, tsdata_f[:,-lookback:,1:], rtdata_v, params['batch_size'], params['model_name'])
+    # else:
+    #     mdm.predict(model, tsdata_f[:, -lookback:, :-1], rtdata_v, params['batch_size'], params['model_name'])
 
 def MTODAY():
     try:
@@ -249,4 +326,5 @@ def _main_():
 
 if __name__ == '__main__':
     # _main_()
-    M1T5C2()
+    # M1T5C3_D1()
+    predict_today()

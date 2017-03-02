@@ -10,6 +10,8 @@
 
 import ConfigParser
 import traceback
+import os
+import shutil
 
 import datetime
 import time
@@ -63,7 +65,6 @@ def intstr(ints):
         return int(ints)
 
 def minmax_scale(arr):
-    # arr = np.array(arr, copy=False)
     mi = np.min(arr)
     mx = np.max(arr)
     arr = (arr-mi)/(mx-mi+K.epsilon())
@@ -71,7 +72,6 @@ def minmax_scale(arr):
 
 
 def pricechange_scale(arr):
-    # arr = np.array(arr, copy=False)
     mi = np.min(arr)
     arr = (arr-mi)/(mi+K.epsilon())*100
     return arr
@@ -88,6 +88,15 @@ class DataManager():
     def refresh_data(self, start='2005-01-01', trytimes=10):
         # refresh history data
         # trytimes, times to try
+
+        edate = datetime.date.today()
+        edate = edate.strftime('%Y-%m-%d')
+        data_backup = './databk/' + os.path.dirname(edate) + '/'
+        if not os.path.exists(data_backup):
+            os.makedirs(data_backup)
+            shutil.move('./data/*', data_backup)
+            os.makedirs('./data/daily')
+
         print ("[ refresh_data ]... start date:%s"%(start))
         basics = ts.get_stock_basics()
         basics.to_csv(self.data_path + 'basics.csv')
@@ -107,24 +116,22 @@ class DataManager():
                     i = i + 1
                     continue
 
-                if df is not None:
+                if df is not None and len(df) > 0:
                     df.to_csv(self.data_path + 'daily/' + symbs[i] + '.csv')
                 else:
                     # TODO: add log trace
                     failsymbs.append(symbs[i])
                 i = i + 1
             if len(failsymbs) > 0:
-                print "In round " + str(times) + " following symbols can't be resolved:\n" + failsymbs
+                print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
                 if times - 1 > 0:
                     trymore(failsymbs, times - 1)
                 else:
                     return
-
         trymore(symbols, trytimes)
 
-    # end of refresh_data
 
-    def get_data(self, symbols=None, online=False, cache=True, start = None):
+    def get_data(self, symbols, days=5, start = None, online=False, cache=True):
         print ("[ get_data ]... for %i symbols online(%s)" %(len(symbols), str(online)))
         if symbols is None: return
         dict = {}
@@ -133,25 +140,35 @@ class DataManager():
             try:
                 if online:
                     df = ts.get_hist_data(symbols[i], start)
-                    dict[symbols[i]] = df[::-1]
+                    if days is not None:
+                        dict[symbols[i]] = df[0:days][::-1]
+                    else:
+                        dict[symbols[i]] = df[::-1]
                     if cache: df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
                 else:
-                    dict[symbols[i]] = pd.read_csv(self.data_path + 'daily/' + symbols[i] + '.csv', index_col=0,
+                    df = pd.read_csv(self.data_path + 'daily/' + symbols[i] + '.csv', index_col=0,
                                                    dtype={'code': str})
+                    if days is not None:
+                        dict[symbols[i]] = df[-days:]
+                    else:
+                        dict[symbols[i]] = df
             except:
                 print "Can't get data for symbol:" + str(symbols[i])
+                traceback.print_exc()
             i = i + 1
         return dict
-    # end of get data
+
 
     def get_bsdata(self, online=False, cache=False):
         print ("[ get_bsdata ]... online(%s)"%(str(online)))
         if online is False:
-            return pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
+            basics = pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
+            print ''
         else:
             basics = ts.get_stock_basics()
             if cache is True: basics.to_csv(self.data_path+'basics.csv')
-            return basics
+            print ''
+        return basics
 
     def create_dataset(self, symbs, lookback=5, todaydata=False):
         """
@@ -180,19 +197,20 @@ class DataManager():
             datecol = np.array(intdate(datelist)).reshape(-1,1)
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
             for i in range(len(data_stock) - lookback - 2):
-                if data_stock['high'][i + lookback] == data_stock['low'][i + lookback]:
-                    continue  # clean data of high equal to low
+                if data_stock['p_change'][i + lookback] >9.98: continue  # clean data un-operational
 
                 dtcell = np.array(data_stock)[i:(i + lookback+2)]
                 ohcl = minmax_scale(dtcell[:,0:4])
 
                 tsdata = np.hstack([datecol[i: i+lookback], ohcl[:-2], dtcell[:-2, 4:]])
                 tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-2,:]])
+                tsdata_f = np.hstack([datecol[i: i+lookback+1], ohcl[:-1], dtcell[:-1, 4:]])
+                # tsdata_f_v = np.hstack([datecol[i: i+lookback+1], dtcell[:-1,:]])
                 rtdata = np.hstack([[int(symb)], datecol[i+lookback], ohcl[-2], dtcell[-2, 4:]])
                 rtdata_v = np.hstack([[int(symb)], datecol[i+lookback], dtcell[-2]])
                 lbdata = np.hstack([[int(symb)], datecol[i+lookback+1], ohcl[-1], dtcell[-1,4:]])
                 lbdata_v = np.hstack([[int(symb)], datecol[i + lookback + 1], dtcell[-1]])
-                data_cell = [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
+                data_cell = [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v,tsdata_f]
                 data_all.append(data_cell)
         print "[ Finish ]"
         return data_all
@@ -227,7 +245,7 @@ class DataManager():
         :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
         """
         print "[ create_feeddata ]..."
-        bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v = [], [], [], [], [], [], []
+        bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v, tsdata_f = [], [], [], [], [], [], [], []
         for d in dataset:
             bsdata.append(d[0])
             tsdata.append(d[1])
@@ -236,6 +254,7 @@ class DataManager():
             tsdata_v.append(d[4])
             rtdata_v.append(d[5])
             lbdata_v.append(d[6])
+            tsdata_f.append(d[7])
         bsdata = np.array(bsdata)
         tsdata = np.array(tsdata)
         rtdata = np.array(rtdata)
@@ -243,7 +262,8 @@ class DataManager():
         tsdata_v = np.array(tsdata_v)
         rtdata_v = np.array(rtdata_v)
         lbdata_v = np.array(lbdata_v)
-        return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v
+        tsdata_f = np.array(tsdata_f)
+        return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v,tsdata_f
 
 
     def catnorm_data(self, data):
@@ -391,32 +411,48 @@ class DataManager():
         symbs = rtdata_df['code']
         rtset = np.array(rtdata_df.astype(float))
 
-        tsdata_dict = self.get_data(symbs, True, False, sdate)
+        tsdata_dict = self.get_data(symbs, lookback)
         for symb in tsdata_dict:
             if int(symb) not in symblist: continue
 
             tsdata_df= tsdata_dict[symb][tsfeatures]
-            datelist = mydate(list(tsdata_df.index))
-            datecol = np.array(intdate(datelist)).reshape(-1,1)
+            datelist = list(tsdata_df.index)
+            datelist.extend([sdate])
+            datecol = np.array(intdate(mydate(datelist))).reshape(-1,1)
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
             rtdata_v = rtset[rtset[:,0] == int(symb)][0]
             if len(tsdata_df) >= lookback:
-                if rtdata_v[1] == rtdata_v[3]: continue  # clean data of high equal to low
+                if rtdata_v[-2] > 9.98: continue
 
                 dtcell = np.array(tsdata_df)[-lookback:]
-                rtdata_v = rtdata_v[1:,:]
+                rtdata_v = rtdata_v[1:]
                 dtcell = np.vstack([dtcell, rtdata_v])
                 ohcl = minmax_scale(dtcell[:,0:4])
 
                 tsdata = np.hstack([datecol[-lookback:], ohcl[:-1], dtcell[:-1, 4:]])
-                tsdata_f = np.hstack([datecol[-lookback:], ohcl, dtcell[:, 4:]])
+                tsdata_f = np.hstack([datecol[-lookback-1:], ohcl, dtcell[:, 4:]])
                 tsdata_v = np.hstack([datecol[-lookback:], dtcell[:-1,:]])
-                rtdata = np.hstack([[int(symb)], datecol[-lookback:], ohcl[-1], dtcell[-1, 4:]])
-                rtdata_v = np.hstack([[int(symb)], datecol[-lookback:], dtcell[-1]])
+                rtdata = np.hstack([[int(symb)], datecol[-1], ohcl[-1], dtcell[-1, 4:]])
+                rtdata_v = np.hstack([[int(symb)], datecol[-1], dtcell[-1]])
 
                 data_cell = [bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f]
                 data_all.append(data_cell)
-        return data_all
+
+        bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f = [], [], [], [], [], []
+        for d in data_all:
+            bsdata.append(d[0])
+            tsdata.append(d[1])
+            rtdata.append(d[2])
+            tsdata_v.append(d[3])
+            rtdata_v.append(d[4])
+            tsdata_f.append(d[5])
+        bsdata = np.array(bsdata)
+        tsdata = np.array(tsdata)
+        rtdata = np.array(rtdata)
+        tsdata_v = np.array(tsdata_v)
+        rtdata_v = np.array(rtdata_v)
+        tsdata_f = np.array(tsdata_f)
+        return bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f
 
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points
