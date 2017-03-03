@@ -50,11 +50,13 @@ def top_k_class(y_true, y_pred, tk, pk):
 
 
 def top_t1p1_class(y_true, y_pred):
-    return top_k_class(y_true, y_pred, 1, 1) * 10000
+    return top_k_class(y_true, y_pred, 1, 1)
 
+def top_t2p1_class(y_true, y_pred):
+    return top_k_class(y_true, y_pred, 2, 1)
 
 def top_t4p1_class(y_true, y_pred):
-    return top_k_class(y_true, y_pred, 4, 1) * 10000
+    return top_k_class(y_true, y_pred, 4, 1)
 
 
 def tpfn_metrics(y_true, y_pred):
@@ -104,6 +106,37 @@ def build_model(params):
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                   metrics=['precision', top_t1p1_class, 'fmeasure'])
+    print "Finish building model"
+    return model
+
+
+def build_model_T2P1(params):
+    """
+    The function builds a keras Sequential model
+    :param lookback: number of previous time steps as int
+    :param batch_size: batch_size as int, defaults to 1
+    :return: keras Sequential model
+    """
+
+    print "[ build_model ]... with params" + str(params)
+    lookback = params['lookback']
+    batch_size = params['batch_size']
+    input_dim = params['indim']
+    output_dim = params['outdim']
+
+    model = Sequential()
+    model.add(GRU(64,
+                  activation='tanh',
+                  batch_input_shape=(batch_size, lookback, input_dim),
+                  stateful=True,
+                  return_sequences=False))
+    model.add(Dropout(0.3))
+    model.add(Dense(32, activation='tanh'))
+    model.add(Dropout(0.3))
+    model.add(Dense(params['outdim']))
+    model.add(Activation('softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+                  metrics=['precision', top_t2p1_class, 'fmeasure'])
     print "Finish building model"
     return model
 

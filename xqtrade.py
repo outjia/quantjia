@@ -23,4 +23,4 @@ def adjust_position(pcode, stocks):
 
 def __main__():
     stocks = predict_today()
-    adjust_position('ZH181903',stocks)
+    adjust_position('ZH181903',stocks[:10])

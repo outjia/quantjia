@@ -331,6 +331,16 @@ class DataManager():
         data_y = np_utils.to_categorical(data_y, 3)
         return data_y
 
+    def catnorm_data4(self, data):
+        data_y = data.copy()
+        # K.clip(data_y, -10, 10)
+        data_y[data_y < -2] = 1000
+        data_y[data_y < 2] = 1001
+        data_y[data_y < 5] = 1002
+        data_y[data_y < 1000] = 1003
+        data_y = data_y - 1000
+        data_y = np_utils.to_categorical(data_y, 4)
+        return data_y
 
     def catnorm_data2(self, data):
         data_y = data.copy()
