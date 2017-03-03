@@ -64,6 +64,18 @@ def intstr(ints):
     else:
         return int(ints)
 
+
+def int2str(ints):
+    sb = '000000'
+    if isinstance(ints, list) or isinstance(ints, np.ndarray):
+        lst = []
+        for i in ints:
+            lst.append(sb[0:6-len(str(i))] + str(i))
+        return lst
+    else:
+        return sb[0:6-len(str(ints))] + str(ints)
+
+
 def minmax_scale(arr):
     mi = np.min(arr)
     mx = np.max(arr)
@@ -131,12 +143,17 @@ class DataManager():
         trymore(symbols, trytimes)
 
 
-    def get_data(self, symbols, days=5, start = None, online=False, cache=True):
-        print ("[ get_data ]... for %i symbols online(%s)" %(len(symbols), str(online)))
-        if symbols is None: return
+    def get_data(self, symb_num, days=None, start = None, online=False, cache=True):
+
+        print ("[ get_data ]... for %i symbols online(%s)" %(symb_num, str(online)))
+        # if symbols is None: return
+
+        basics = self.get_bsdata(online,cache)
+        symbols = int2str(list(basics.index))
+        failsymbs = []
         dict = {}
         i = 0
-        while i < len(symbols):
+        while i < len(symbols) and i < symb_num:
             try:
                 if online:
                     df = ts.get_hist_data(symbols[i], start)
@@ -154,8 +171,17 @@ class DataManager():
                         dict[symbols[i]] = df
             except:
                 print "Can't get data for symbol:" + str(symbols[i])
-                traceback.print_exc()
+		failsymbs.append(symbols[i])
+        #                traceback.print_exc()
             i = i + 1
+
+        #	for s in failsymbs:
+        #		df = ts.get_hist_data(s, start)
+        #		if days is not None:
+        #	        	dict[s] = df[0:days][::-1]
+        #                else:
+        #                        dict[s] = df[::-1]
+        #                        df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
         return dict
 
 
@@ -266,18 +292,49 @@ class DataManager():
         return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v,tsdata_f
 
 
+    def create_feeddata_hp(self, dataset):
+        """
+        Splits dataset into data and labels.
+        :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
+        :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
+        """
+        print "[ create_feeddata ]..."
+        rows = [len(dataset)]
+        bsdata = np.zeros(rows + list(dataset[0][0].shape))
+        tsdata = np.zeros(rows + list(dataset[0][1].shape))
+        rtdata = np.zeros(rows + list(dataset[0][2].shape))
+        lbdata = np.zeros(rows + list(dataset[0][3].shape))
+        tsdata_v = np.zeros(rows + list(dataset[0][4].shape))
+        rtdata_v = np.zeros(rows + list(dataset[0][5].shape))
+        lbdata_v = np.zeros(rows + list(dataset[0][6].shape))
+        tsdata_f = np.zeros(rows + list(dataset[0][7].shape))
+        i = 0
+        while i < len(dataset):
+            bsdata[i] = dataset[i][0]
+            tsdata[i] = dataset[i][1]
+            rtdata[i] = dataset[i][2]
+            lbdata[i] = dataset[i][3]
+            tsdata_v[i] = dataset[i][4]
+            rtdata_v[i] = dataset[i][5]
+            lbdata_v[i] = dataset[i][6]
+            tsdata_f[i] = dataset[i][7]
+            i += 1
+        return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v,tsdata_f
+
     def catnorm_data(self, data):
         data_y = data.copy()
-        data_y[data_y < -2] = 11
-        data_y[data_y < 2] = 12
-        data_y[data_y < 11] = 13
-        data_y = data_y - 11
+        # K.clip(data_y, -10, 10)
+        data_y[data_y < -2] = 1000
+        data_y[data_y < 2] = 1001
+        data_y[data_y < 1000] = 1002
+        data_y = data_y - 1000
         data_y = np_utils.to_categorical(data_y, 3)
         return data_y
 
 
     def catnorm_data2(self, data):
         data_y = data.copy()
+        K.clip(data_y, -10, 10)
         data_y[data_y < 2] = 11
         data_y[data_y < 11] = 12
         data_y = data_y - 11
@@ -287,6 +344,7 @@ class DataManager():
 
     def catnorm_data2test(self, data):
         data_y = data.copy()
+        K.clip(data_y, -10, 10)
         data_y[data_y < 0] = 11
         data_y[data_y < 11] = 12
         data_y = data_y - 11
@@ -296,6 +354,7 @@ class DataManager():
 
     def catnorm_data10(self, data):
         data_y = data.copy()
+        K.clip(data_y, -10, 10)
         data_y[data_y < -9] = 11
         data_y[data_y < -7] = 12
         data_y[data_y < -5] = 13
@@ -408,12 +467,12 @@ class DataManager():
 
         # get real time data(array) for all stocks
         rtdata_df = ts.get_today_all()[rtlabels]
-        symbs = rtdata_df['code']
+        symbs = np.array(rtdata_df['code'])
         rtset = np.array(rtdata_df.astype(float))
 
-        tsdata_dict = self.get_data(symbs, lookback)
+        tsdata_dict = self.get_data(len(symbs), lookback)
         for symb in tsdata_dict:
-            if int(symb) not in symblist: continue
+            if int(symb) not in symblist or int(symb) not in intstr(symbs): continue
 
             tsdata_df= tsdata_dict[symb][tsfeatures]
             datelist = list(tsdata_df.index)
@@ -432,8 +491,8 @@ class DataManager():
                 tsdata = np.hstack([datecol[-lookback:], ohcl[:-1], dtcell[:-1, 4:]])
                 tsdata_f = np.hstack([datecol[-lookback-1:], ohcl, dtcell[:, 4:]])
                 tsdata_v = np.hstack([datecol[-lookback:], dtcell[:-1,:]])
-                rtdata = np.hstack([[int(symb)], datecol[-1], ohcl[-1], dtcell[-1, 4:]])
-                rtdata_v = np.hstack([[int(symb)], datecol[-1], dtcell[-1]])
+                rtdata = np.hstack([[int(symb)], [111111111], ohcl[-1], dtcell[-1, 4:]])
+                rtdata_v = np.hstack([[int(symb)], [111111111], dtcell[-1]])
 
                 data_cell = [bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f]
                 data_all.append(data_cell)

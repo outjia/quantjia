@@ -302,6 +302,7 @@ def predict(model, data_x, data_y=None, batch_size=128, model_name=None):
     print "[ predict ]... using model " + model_name
     if model.stateful:
         data_x = data_x[:len(data_x) / batch_size * batch_size]
+        data_y = data_y[:len(data_y) / batch_size * batch_size]
     proba = model.predict_proba(data_x, verbose=0, batch_size=batch_size)
     if data_y is None:
         # output (prediction, stock code, open, close, high, low)
@@ -318,5 +319,5 @@ def predict(model, data_x, data_y=None, batch_size=128, model_name=None):
     if not __debug__:
         np.savetxt("./models/" + filename + "/result.txt", sortout, fmt='%f')
     else:
-        print sortout[0:200, 0:5]
+        print sortout[0:200, 2:]
     return sortout
