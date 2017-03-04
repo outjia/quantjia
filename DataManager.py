@@ -101,17 +101,17 @@ class DataManager():
         # refresh history data
         # trytimes, times to try
 
-        edate = datetime.date.today()
+        # edate = datetime.date.today()
+        edate = datetime.date.today() - timedelta(days=1)
         edate = edate.strftime('%Y-%m-%d')
-        data_backup = './databk/' + os.path.dirname(edate) + '/'
-        if not os.path.exists(data_backup):
-            os.makedirs(data_backup)
-            shutil.move('./data/*', data_backup)
-            os.makedirs('./data/daily')
-
+        data_path = './data/' + edate + '/'
+        if os.path.exists(data_path):
+            return
+        else:
+            os.makedirs(data_path)
         print ("[ refresh_data ]... start date:%s"%(start))
         basics = ts.get_stock_basics()
-        basics.to_csv(self.data_path + 'basics.csv')
+        basics.to_csv('./data/basics.csv')
         all_data = ts.get_today_all()
         symbols = all_data['code']
 
@@ -129,7 +129,8 @@ class DataManager():
                     continue
 
                 if df is not None and len(df) > 0:
-                    df.to_csv(self.data_path + 'daily/' + symbs[i] + '.csv')
+                    df.to_csv(data_path + symbs[i] + '.csv')
+                    df.to_csv('./data/daily/'+ symbs[i] + '.csv')
                 else:
                     # TODO: add log trace
                     failsymbs.append(symbs[i])
@@ -137,51 +138,31 @@ class DataManager():
             if len(failsymbs) > 0:
                 print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
                 if times - 1 > 0:
-                    trymore(failsymbs, times - 1)
+                    times = times -1
+                    trymore(failsymbs, times)
                 else:
                     return
         trymore(symbols, trytimes)
-
 
     def get_data(self, symb_num, days=None, start = None, online=False, cache=True):
 
         print ("[ get_data ]... for %i symbols online(%s)" %(symb_num, str(online)))
         # if symbols is None: return
-
-        basics = self.get_bsdata(online,cache)
+        self.refresh_data()
+        basics = self.get_bsdata(False,False)
         symbols = int2str(list(basics.index))
-        failsymbs = []
         dict = {}
         i = 0
         while i < len(symbols) and i < symb_num:
             try:
-                if online:
-                    df = ts.get_hist_data(symbols[i], start)
-                    if days is not None:
-                        dict[symbols[i]] = df[0:days][::-1]
-                    else:
-                        dict[symbols[i]] = df[::-1]
-                    if cache: df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
+                df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
+                if days is not None:
+                    dict[symbols[i]] = df[-days:]
                 else:
-                    df = pd.read_csv(self.data_path + 'daily/' + symbols[i] + '.csv', index_col=0,
-                                                   dtype={'code': str})
-                    if days is not None:
-                        dict[symbols[i]] = df[-days:]
-                    else:
-                        dict[symbols[i]] = df
+                    dict[symbols[i]] = df
             except:
                 print "Can't get data for symbol:" + str(symbols[i])
-		failsymbs.append(symbols[i])
-        #                traceback.print_exc()
             i = i + 1
-
-        #	for s in failsymbs:
-        #		df = ts.get_hist_data(s, start)
-        #		if days is not None:
-        #	        	dict[s] = df[0:days][::-1]
-        #                else:
-        #                        dict[s] = df[::-1]
-        #                        df.to_csv(self.data_path + 'daily/' + symbols[i] + '.csv')
         return dict
 
 
@@ -196,7 +177,7 @@ class DataManager():
             print ''
         return basics
 
-    def create_dataset(self, symbs, lookback=5, todaydata=False):
+    def create_dataset(self, symbs, lookback=5):
         """
         The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
         and the `lookback`, which is the number of previous time steps to use as input variables
@@ -241,6 +222,48 @@ class DataManager():
         print "[ Finish ]"
         return data_all
 
+    def create_trainset(self, symbs, lookback=5):
+        """
+        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+        and the `lookback`, which is the number of previous time steps to use as input variables
+        to predict the next time period — in this case defaulted to 5.
+        symbs
+        lookback: number of previous time steps as int
+        returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
+        """
+
+        print "[ create_dataset ]... "
+        data_all = []
+        bsset = self.get_bsdata()[bfeatures]
+        bsset = bsset[bsset['pb'] > 0]
+        symblist = intstr(list(bsset.index))
+        bsset = preprocessing.scale(bsset)
+        bsset = np.hstack([np.array(symblist).reshape(len(symblist),1), bsset])
+
+        stockset = self.get_data(symbs)
+        for symb in stockset:
+            if int(symb) not in symblist: continue
+
+            data_stock = stockset[symb][tsfeatures]
+            datelist = mydate(list(data_stock.index))
+            datecol = np.array(intdate(datelist)).reshape(-1,1)
+            bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
+            for i in range(len(data_stock) - lookback - 1):
+                if data_stock['p_change'][i + lookback] >9.98: continue  # clean data un-operational
+
+                dtcell = np.array(data_stock)[i:(i+lookback+1)]
+                ohcl = minmax_scale(dtcell[:,0:4])
+
+                tsdata = np.hstack([datecol[i: i+lookback], ohcl[:-1], dtcell[:-1, 4:]])
+                tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-1,:]])
+                # rtdata = np.hstack([[int(symb)], datecol[i+lookback], ohcl[-1], dtcell[-1, 4:]])
+                # rtdata_v = np.hstack([[int(symb)], datecol[i+lookback], dtcell[-1]])
+                lbdata = np.hstack([[int(symb)], datecol[i+lookback+1], ohcl[-1], dtcell[-1,4:]])
+                lbdata_v = np.hstack([[int(symb)], datecol[i + lookback + 1], dtcell[-1]])
+                data_cell = [bsdata, tsdata, lbdata, tsdata_v, lbdata_v]
+                data_all.append(data_cell)
+        print "[ Finish ]"
+        return data_all
 
     def split_dataset(self, dataset, train_psize, batch_size=1, seed=None):
         """
@@ -342,117 +365,6 @@ class DataManager():
         data_y = np_utils.to_categorical(data_y, 4)
         return data_y
 
-    def catnorm_data2(self, data):
-        data_y = data.copy()
-        K.clip(data_y, -10, 10)
-        data_y[data_y < 2] = 11
-        data_y[data_y < 11] = 12
-        data_y = data_y - 11
-        data_y = np_utils.to_categorical(data_y, 2)
-        return data_y
-
-
-    def catnorm_data2test(self, data):
-        data_y = data.copy()
-        K.clip(data_y, -10, 10)
-        data_y[data_y < 0] = 11
-        data_y[data_y < 11] = 12
-        data_y = data_y - 11
-        data_y = np_utils.to_categorical(data_y, 2)
-        return data_y
-
-
-    def catnorm_data10(self, data):
-        data_y = data.copy()
-        K.clip(data_y, -10, 10)
-        data_y[data_y < -9] = 11
-        data_y[data_y < -7] = 12
-        data_y[data_y < -5] = 13
-        data_y[data_y < -3] = 14
-        data_y[data_y < -1] = 15
-        data_y[data_y < 1] = 16
-        data_y[data_y < 3] = 17
-        data_y[data_y < 5] = 18
-        data_y[data_y < 7] = 19
-        data_y[data_y < 11] = 20
-        data_y = data_y - 11
-        data_y = np_utils.to_categorical(data_y, 10)
-        return data_y
-
-
-    def get_todaydata(self, lookback=22, refresh=False, trytimes=3):
-        """
-        Splits dataset into data and labels.
-        :param dataset: source dataset, list of two elements
-        :return: data_x of predication, the last column is the symb code
-        """
-        print ("[ get_todaydata ]...whith refresh %s"%str(refresh))
-        sdate = None
-        edate = None
-        today_data = []
-        rtdata = []
-        cachefile = None
-        failedsymbs = []
-
-        if datetime.datetime.now().hour > 15:
-            edate = datetime.date.today()
-        else:
-            edate = datetime.date.today() - timedelta(days=1)
-        cachefile = './data/todaydata/' + edate.strftime('%Y%m%d') + '.npy'
-
-        if refresh is False:
-            try:
-                today_data = np.load(cachefile)
-                if today_data is not None and len(today_data) != 0:
-                    print "Get today data from cache"
-                    return today_data
-                else:
-                    print "Warning, can't get today data from cache"
-            except:
-                pass
-        # in case of holidays without trading
-        sdate = edate - timedelta(days=(lookback + lookback / 5 * 2 + 20))
-        edate = edate.strftime('%Y-%m-%d')
-        sdate = sdate.strftime('%Y-%m-%d')
-        basics = ts.get_stock_basics()
-
-        def trymore(trytimes, symbs):
-            if trytimes == 0 or symbs is None or len(symbs) == 0: return
-            del failedsymbs[:]
-            for symb in list(symbs):
-                try:
-                    data = ts.get_hist_data(symb, start=sdate, end=edate)[::-1]
-                    if data is None:
-                        failedsymbs.append(symb)
-                        continue
-                except:
-                    failedsymbs.append(symb)
-                    continue
-
-                if len(data) < lookback or data['high'][-1] == data['low'][-1]: continue
-                if data.index[0] != edate: continue
-                data = data.drop(dfeatures, axis=1)
-                for f in bfeatures:
-                    data[f] = basics.loc[symb][f]
-                data['volume'] = data['volume'] / 10000
-                data['code'] = int(symb)
-                # TODO Careful, code shouldn't be used in train and predict, just for referencing!!!
-
-                # convert data to ndarray
-                ndata = np.array(data)
-                today_data.append(ndata[len(data) - lookback:len(data)])
-            trymore(trytimes - 1, failedsymbs)
-            return
-
-        trymore(trytimes, basics.index)
-        today_data = np.array(today_data)
-        np.save(cachefile, today_data)
-
-        print("Get latest %i stocks info from %i stocks." % (len(today_data), len(basics)))
-        print("The following symbols can't be resolved after %i retries:" % (trytimes - 1))
-        print failedsymbs
-        return today_data
-
     def create_today_dataset(self, lookback=5):
         """
         The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
@@ -501,27 +413,30 @@ class DataManager():
                 tsdata = np.hstack([datecol[-lookback:], ohcl[:-1], dtcell[:-1, 4:]])
                 tsdata_f = np.hstack([datecol[-lookback-1:], ohcl, dtcell[:, 4:]])
                 tsdata_v = np.hstack([datecol[-lookback:], dtcell[:-1,:]])
-                rtdata = np.hstack([[int(symb)], [111111111], ohcl[-1], dtcell[-1, 4:]])
-                rtdata_v = np.hstack([[int(symb)], [111111111], dtcell[-1]])
+                rtdata = np.hstack([[int(symb)], [99999999], ohcl[-1], dtcell[-1, 4:]])
+                rtdata_v = np.hstack([[int(symb)], [99999999], dtcell[-1]])
 
                 data_cell = [bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f]
                 data_all.append(data_cell)
 
-        bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f = [], [], [], [], [], []
-        for d in data_all:
-            bsdata.append(d[0])
-            tsdata.append(d[1])
-            rtdata.append(d[2])
-            tsdata_v.append(d[3])
-            rtdata_v.append(d[4])
-            tsdata_f.append(d[5])
-        bsdata = np.array(bsdata)
-        tsdata = np.array(tsdata)
-        rtdata = np.array(rtdata)
-        tsdata_v = np.array(tsdata_v)
-        rtdata_v = np.array(rtdata_v)
-        tsdata_f = np.array(tsdata_f)
+        rows = [len(data_all)]
+        bsdata = np.zeros(rows + list(data_all[0][0].shape))
+        tsdata = np.zeros(rows + list(data_all[0][1].shape))
+        rtdata = np.zeros(rows + list(data_all[0][2].shape))
+        tsdata_v = np.zeros(rows + list(data_all[0][3].shape))
+        rtdata_v = np.zeros(rows + list(data_all[0][4].shape))
+        tsdata_f = np.zeros(rows + list(data_all[0][5].shape))
+        i = 0
+        while i < len(data_all):
+            bsdata[i] = data_all[i][0]
+            tsdata[i] = data_all[i][1]
+            rtdata[i] = data_all[i][2]
+            tsdata_v[i] = data_all[i][3]
+            rtdata_v[i] = data_all[i][4]
+            tsdata_f[i] = data_all[i][5]
+            i += 1
         return bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f
+
 
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points

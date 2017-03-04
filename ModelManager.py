@@ -12,28 +12,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 
 dmr = dm.DataManager()
 signature = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
-datapath = './data/new/'
 
-
-def top_1_categorical_accuracy(y_true, y_pred):
-    return top_k_categorical_accuracy(y_true, y_pred, k=1)
-
-
-def top_1_precision(y_true, y_pred):
-    shap = y_pred.get_shape()
-    tp = K.sum(y_true[::, shap[len(shap) - 1] - 1] * y_pred[::, shap[len(shap) - 1] - 1])
-    pp = K.sum(y_pred[::, shap[len(shap) - 1] - 1])
-    return tp / (pp + K.epsilon())
-
-
-def top_k_precision(y_true, y_pred, k):
-    # top k class classification precision
-    shap = y_pred.get_shape()
-    lenth = shap[len(shap) - 1]
-    if k <= lenth:
-        y_true_k = y_true[::, lenth - k:lenth]
-        y_pred_k = y_pred[::, lenth - k:lenth]
-    return precision(y_true_k, y_pred_k)
 
 
 def top_k_class(y_true, y_pred, tk, pk):
@@ -97,46 +76,15 @@ def build_model(params):
     model.add(GRU(64,
                   activation='tanh',
                   batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
+                  stateful=False,
                   return_sequences=False))
     model.add(Dropout(0.3))
     model.add(Dense(32, activation='tanh'))
     model.add(Dropout(0.3))
-    model.add(Dense(3))
+    model.add(Dense(output_dim))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', top_t1p1_class, 'fmeasure'])
-    print "Finish building model"
-    return model
-
-
-def build_model_T2P1(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :return: keras Sequential model
-    """
-
-    print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.3))
-    model.add(Dense(32, activation='tanh'))
-    model.add(Dropout(0.3))
-    model.add(Dense(params['outdim']))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', top_t2p1_class, 'fmeasure'])
+                  metrics=['precision', eval(params['custmetric']), 'fmeasure'])
     print "Finish building model"
     return model
 
@@ -170,156 +118,6 @@ def build_model2(lookback, batch_size, input_dim, output_dim):
     final_model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                         metrics=['precision', 'categorical_accuracy', 'fmeasure'])
     return final_model
-
-
-def build_model3(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :param input_dim: input dimension as int
-    :param output_dim: outpu dimension as int
-    :return: keras Sequential model
-    """
-
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.3))
-    model.add(Dense(32, activation='tanh'))
-    model.add(Dropout(0.3))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', 'categorical_accuracy', 'fmeasure'])
-    return model
-
-
-def build_model4(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :param input_dim: input dimension as int
-    :param output_dim: outpu dimension as int
-    :return: keras Sequential model
-    """
-
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=False,
-                  return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(16))
-    model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop', metrics=['precision', top_t1p1_class])
-    return model
-
-
-def build_model6(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :param input_dim: input dimension as int
-    :param output_dim: outpu dimension as int
-    :return: keras Sequential model
-    """
-
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', 'categorical_accuracy', 'fmeasure', top_t1p1_class])
-    return model
-
-
-def build_model5(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :param input_dim: input dimension as int
-    :param output_dim: outpu dimension as int
-    :return: keras Sequential model
-    """
-
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(32, activation='tanh'))
-    model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', 'categorical_accuracy', 'fmeasure', top_t4p1_class])
-    return model
-
-
-def train_model(model, params, train_x, train_y, callbacks, test_x=None, test_y=None):
-    print "[ Train model ]..."
-    callback = model.fit(train_x, train_y, batch_size=params['batch_size'], nb_epoch=params['epoch'],
-                         validation_data=(test_x, test_y),callbacks = callbacks)
-    if not __debug__:
-        # Save models and metrics
-        model_dir = os.path.dirname('models/' + params['model_name'] + '/logs')
-        if not os.path.exists(model_dir): os.makedirs(model_dir)
-        save_model(model, './models/' + params['model_name'] + '/model.h5')
-        # hist = dict(callback.history)
-        # for key in hist.keys():
-        #     np.savetxt('./models/' + params['model_name'] + '/' + key + ".txt", hist[key])
-    return model
-
-
-# deprecated function, only works for model1
-def predict_d(model, data_x, data_y, batch_size):
-    print "Start to predict using trained model"
-    proba = model.predict_proba(data_x, verbose=0, batch_size=batch_size)
-    out = np.column_stack([proba, data_y])
-    sortout = out[(-out[:, 2]).argsort(), :]
-    if not __debug__:
-        np.savetxt("./models/" + signature + "_result.txt", sortout, fmt='%f')
-    else:
-        print sortout[0:200, 0:5]
-    print "Finish the prediction"
-    return sortout
 
 
 def predict(model, data_x, data_y=None, batch_size=128, model_name=None):
