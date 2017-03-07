@@ -12,6 +12,8 @@ import ConfigParser
 import traceback
 import os
 import shutil
+import json
+import h5py
 
 import datetime
 import time
@@ -34,6 +36,7 @@ tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
 dfeatures = ['price_change', 'ma5', 'ma10', 'ma20', 'v_ma5', 'v_ma10', 'v_ma20']
 tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
+
 def mydate(datestr):
     if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
         datelist = []
@@ -55,6 +58,7 @@ def intdate(dt):
     else:
         return dt.year*10000+dt.month*100+dt.day
 
+
 def intstr(ints):
     if isinstance(ints, list) or isinstance(ints, np.ndarray):
         intarr = []
@@ -70,10 +74,10 @@ def int2str(ints):
     if isinstance(ints, list) or isinstance(ints, np.ndarray):
         lst = []
         for i in ints:
-            lst.append(sb[0:6-len(str(i))] + str(i))
+            lst.append(sb[0:6-len(str(int(i)))] + str(i))
         return lst
     else:
-        return sb[0:6-len(str(ints))] + str(ints)
+        return sb[0:6-len(str(int(ints)))] + str(int(ints))
 
 
 def minmax_scale(arr):
@@ -91,11 +95,12 @@ def pricechange_scale(arr):
 
 class DataManager():
     def __init__(self, cfgfile='config.cfg', data_path='data/', logfile='dm.log'):
-        self.configParser = ConfigParser.ConfigParser()
-        self.configParser.read(cfgfile)
-        self.data_path = data_path
-        self.storage = self.configParser.get('dbconfig', 'storage')
-        self.logfile = logfile
+        pass
+        # self.configParser = ConfigParser.ConfigParser()
+        # self.configParser.read(cfgfile)
+        # self.data_path = data_path
+        # self.storage = self.configParser.get('dbconfig', 'storage')
+        # self.logfile = logfile
 
     def refresh_data(self, start='2005-01-01', trytimes=10):
         # refresh history data
@@ -120,7 +125,7 @@ class DataManager():
             i = 0
             while i < len(symbs):
                 try:
-                    df = ts.get_hist_data(symbs[i], start)[::-1]
+                    df = ts.get_hist_data(symbs[i], start)
                 except:
                     failsymbs.append(symbs[i])
                     print "Exception when processing " + symbs[i]
@@ -129,6 +134,7 @@ class DataManager():
                     continue
 
                 if df is not None and len(df) > 0:
+                    df = df[::-1]
                     df.to_csv(data_path + symbs[i] + '.csv')
                     df.to_csv('./data/daily/'+ symbs[i] + '.csv')
                 else:
@@ -144,37 +150,60 @@ class DataManager():
                     return
         trymore(symbols, trytimes)
 
-    def get_data(self, symb_num, days=None, start = None, online=False, cache=True):
-
-        print ("[ get_data ]... for %i symbols online(%s)" %(symb_num, str(online)))
+    def get_data(self, symb_num):
+        print ("[ get_data ]... for %i symbols" %(symb_num))
         # if symbols is None: return
         self.refresh_data()
-        basics = self.get_bsdata(False,False)
+        basics = self.get_bsdata()
         symbols = int2str(list(basics.index))
         dict = {}
         i = 0
         while i < len(symbols) and i < symb_num:
             try:
                 df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
-                if days is not None:
-                    dict[symbols[i]] = df[-days:]
-                else:
+                if df is not None:
                     dict[symbols[i]] = df
             except:
                 print "Can't get data for symbol:" + str(symbols[i])
+                # traceback.print_exc()
+                i = i + 1
+                continue
             i = i + 1
         return dict
+
+    def get_today_data(self, days=None):
+        print ("[ get_today data]... ")
+        edate = datetime.date.today() - timedelta(days=1)
+        edate = edate.strftime('%Y-%m-%d')
+        today_file = './data/' + edate + '/today.h5'
+        if os.path.exists(today_file):
+            f = h5py.File(today_file, 'r')
+            return f
+        self.refresh_data()
+        basics = self.get_bsdata()
+        symbols = int2str(list(basics.index))
+        f = h5py.File(today_file, 'w')
+        i = 0
+        while i < len(symbols):
+            try:
+                df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
+            except:
+                print "Can't get data for symbol:" + str(symbols[i])
+            if df is not None:
+                df = df[-days:][tsfeatures]
+                f.create_dataset(symbols[i], data=np.array(df.astype(float)))
+            i += 1
+        f.flush()
+        return f
 
 
     def get_bsdata(self, online=False, cache=False):
         print ("[ get_bsdata ]... online(%s)"%(str(online)))
         if online is False:
-            basics = pd.read_csv(self.data_path+'basics.csv', index_col =0,dtype={'code':str})
-            print ''
+            basics = pd.read_csv('./data/basics.csv', index_col =0,dtype={'code':str})
         else:
             basics = ts.get_stock_basics()
-            if cache is True: basics.to_csv(self.data_path+'basics.csv')
-            print ''
+            if cache is True: basics.to_csv('./data/basics.csv')
         return basics
 
     def create_dataset(self, symbs, lookback=5):
@@ -255,12 +284,12 @@ class DataManager():
                 ohcl = minmax_scale(dtcell[:,0:4])
 
                 tsdata = np.hstack([datecol[i: i+lookback], ohcl[:-1], dtcell[:-1, 4:]])
-                tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-1,:]])
+                # tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-1,:]])
                 # rtdata = np.hstack([[int(symb)], datecol[i+lookback], ohcl[-1], dtcell[-1, 4:]])
                 # rtdata_v = np.hstack([[int(symb)], datecol[i+lookback], dtcell[-1]])
-                lbdata = np.hstack([[int(symb)], datecol[i+lookback+1], ohcl[-1], dtcell[-1,4:]])
-                lbdata_v = np.hstack([[int(symb)], datecol[i + lookback + 1], dtcell[-1]])
-                data_cell = [bsdata, tsdata, lbdata, tsdata_v, lbdata_v]
+                # lbdata = np.hstack([[int(symb)], datecol[i+lookback+1], ohcl[-1], dtcell[-1,4:]])
+                lbdata_v = np.hstack([[int(symb)], datecol[i + lookback], dtcell[-1]])
+                data_cell = [bsdata, tsdata, lbdata_v]
                 data_all.append(data_cell)
         print "[ Finish ]"
         return data_all
@@ -344,6 +373,25 @@ class DataManager():
             i += 1
         return bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v,tsdata_f
 
+    def create_feedtrain_hp(self, dataset):
+        """
+        Splits dataset into data and labels.
+        :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
+        :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
+        """
+        print "[ create_feeddata ]..."
+        rows = [len(dataset)]
+        bsdata = np.zeros(rows + list(dataset[0][0].shape))
+        tsdata = np.zeros(rows + list(dataset[0][1].shape))
+        lbdata_v = np.zeros(rows + list(dataset[0][2].shape))
+        i = 0
+        while i < len(dataset):
+            bsdata[i] = dataset[i][0]
+            tsdata[i] = dataset[i][1]
+            lbdata_v[i] = dataset[i][2]
+            i += 1
+        return bsdata, tsdata, lbdata_v
+
     def catnorm_data(self, data):
         data_y = data.copy()
         # K.clip(data_y, -10, 10)
@@ -377,7 +425,7 @@ class DataManager():
         rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
         data_all = []
         print ("[ create today's dataset ]...")
-        sdate = datetime.date.today() - timedelta(days=30)
+        sdate = datetime.date.today()
         sdate = sdate.strftime('%Y-%m-%d')
 
         # get basic data(array) for all stocks
@@ -403,7 +451,7 @@ class DataManager():
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
             rtdata_v = rtset[rtset[:,0] == int(symb)][0]
             if len(tsdata_df) >= lookback:
-                if rtdata_v[-2] > 9.98: continue
+                if rtdata_v[-2] > 9.98 or rtdata_v[-4] == 0: continue
 
                 dtcell = np.array(tsdata_df)[-lookback:]
                 rtdata_v = rtdata_v[1:]
@@ -413,8 +461,8 @@ class DataManager():
                 tsdata = np.hstack([datecol[-lookback:], ohcl[:-1], dtcell[:-1, 4:]])
                 tsdata_f = np.hstack([datecol[-lookback-1:], ohcl, dtcell[:, 4:]])
                 tsdata_v = np.hstack([datecol[-lookback:], dtcell[:-1,:]])
-                rtdata = np.hstack([[int(symb)], [99999999], ohcl[-1], dtcell[-1, 4:]])
-                rtdata_v = np.hstack([[int(symb)], [99999999], dtcell[-1]])
+                rtdata = np.hstack([[int(symb)], datecol[-1], ohcl[-1], dtcell[-1, 4:]])
+                rtdata_v = np.hstack([[int(symb)], datecol[-1], dtcell[-1]])
 
                 data_cell = [bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f]
                 data_all.append(data_cell)
@@ -437,6 +485,89 @@ class DataManager():
             i += 1
         return bsdata, tsdata, rtdata, tsdata_v, rtdata_v, tsdata_f
 
+    def create_today_dataset_simple(self, lookback=5):
+        """
+        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+        and the `lookback`, which is the number of previous time steps to use as input variables
+        to predict the next time period — in this case defaulted to 5.
+        symbs
+        lookback: number of previous time steps as int
+        returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
+        """
+        rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
+        tsdataset = []
+        rtdataset = []
+        print ("[ create today's dataset ]...")
+
+        tsdata_dict = self.get_today_data(days=22)
+        rtdata_df = ts.get_today_all()[rtlabels]
+        symbs = np.array(rtdata_df['code'])
+        rtset = np.array(rtdata_df.astype(float))
+        for symb in tsdata_dict:
+            if int(symb) not in intstr(symbs): continue
+            tsdata_df= tsdata_dict[symb]
+            rtdata_v = rtset[rtset[:,0] == int(symb)][0]
+
+            if len(tsdata_df) >= lookback -1:
+                if rtdata_v[-2] > 9.98 or rtdata_v[-4] == 0: continue
+                tsdata_v = np.vstack([np.array(tsdata_df), rtdata_v[1:]])[-lookback:]
+                ohcl = minmax_scale(tsdata_v[:,0:4])
+                tsdata = np.hstack([ohcl, tsdata_v[:, 4:]])
+                tsdataset.append(tsdata)
+                rtdataset.append(rtdata_v)
+        return np.array(tsdataset), np.array(rtdataset)
+
+    def create_val_dataset(self, lookback=5, days=1):
+        """
+        The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+        and the `lookback`, which is the number of previous time steps to use as input variables
+        to predict the next time period — in this case defaulted to 5.
+        symbs
+        lookback: number of previous time steps as int
+        returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
+        """
+        rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
+        data_all = []
+        print ("[ create today's dataset ]...")
+        sdate = datetime.date.today() - timedelta(days=30)
+        sdate = sdate.strftime('%Y-%m-%d')
+
+        # get basic data(array) for all stocks
+        bsset = self.get_bsdata()[bfeatures]
+        bsset = bsset[bsset['pb'] > 0]
+        symblist = intstr(list(bsset.index))
+        bsset = preprocessing.scale(bsset)
+        bsset = np.hstack([np.array(symblist).reshape(len(symblist),1), bsset])
+
+        tsdata_dict = self.get_data(3100)
+        for symb in tsdata_dict:
+            if int(symb) not in symblist: continue
+
+            tsdata_df= tsdata_dict[symb][tsfeatures]
+            datelist = list(tsdata_df.index)
+            datecol = np.array(intdate(mydate(datelist))).reshape(-1,1)
+            bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
+            if len(tsdata_df) >= lookback + days:
+                dtcell = np.array(tsdata_df)[-lookback-days:]
+                ohcl = minmax_scale(dtcell[:,0:4])
+                tsdata = np.hstack([datecol[-lookback-days:], ohcl, dtcell[:, 4:]])
+                tsdata_v = np.hstack([datecol[-lookback-days:], dtcell])
+                lbdata_v = np.hstack([np.zeros((days,1))+int(symb), datecol[-days:], dtcell[-days:]])
+                data_cell = [bsdata, tsdata, tsdata_v, lbdata_v]
+                data_all.append(data_cell)
+        rows = [len(data_all)]
+        bsdata = np.zeros(rows + list(data_all[0][0].shape))
+        tsdata = np.zeros(rows + list(data_all[0][1].shape))
+        tsdata_v = np.zeros(rows + list(data_all[0][2].shape))
+        lbdata_v = np.zeros(rows + list(data_all[0][3].shape))
+        i = 0
+        while i < len(data_all):
+            bsdata[i] = data_all[i][0]
+            tsdata[i] = data_all[i][1]
+            tsdata_v[i] = data_all[i][2]
+            lbdata_v[i] = data_all[i][3]
+            i += 1
+        return bsdata, tsdata, tsdata_v, lbdata_v
 
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points
@@ -461,9 +592,9 @@ def test_plot():
 
 def main():
     dmr = DataManager()
-    data = dmr.create_dataset(['601866'])
-    print '#####data samples#############'
-    print data[0:2]
+    # data = dmr.create_dataset(['601866'])
+    # print '#####data samples#############'
+    # print data[0:2]
 
     # train, test = dmr.split_dataset(data, 0.7)
     # print '#####train samples#############'
@@ -495,11 +626,13 @@ def main():
     # print '#####get dataset2 samples############'
     # print data
 
-    arr = np.arange(12).reshape(3,4)
-    print arr
-    a = minmax_scale(arr)
-    print a
-    print arr
+    dmr.create_today_dataset_simple(5)
+
+    # arr = np.arange(12).reshape(3,4)
+    # print arr
+    # a = minmax_scale(arr)
+    # print a
+    # print arr
 
 
 

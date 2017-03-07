@@ -14,7 +14,6 @@ dmr = dm.DataManager()
 signature = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
 
 
-
 def top_k_class(y_true, y_pred, tk, pk):
     # chance of predict_class_highest in top k classes
     shap = y_pred.get_shape()
@@ -31,8 +30,10 @@ def top_k_class(y_true, y_pred, tk, pk):
 def top_t1p1_class(y_true, y_pred):
     return top_k_class(y_true, y_pred, 1, 1)
 
+
 def top_t2p1_class(y_true, y_pred):
     return top_k_class(y_true, y_pred, 2, 1)
+
 
 def top_t4p1_class(y_true, y_pred):
     return top_k_class(y_true, y_pred, 4, 1)
@@ -76,11 +77,11 @@ def build_model(params):
     model.add(GRU(64,
                   activation='tanh',
                   batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=False,
+                  stateful=True,
                   return_sequences=False))
-    model.add(Dropout(0.3))
+    model.add(Dropout(0.4))
     model.add(Dense(32, activation='tanh'))
-    model.add(Dropout(0.3))
+    model.add(Dropout(0.4))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
