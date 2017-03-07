@@ -90,13 +90,20 @@ def build_model(params):
     return model
 
 
-def build_model2(lookback, batch_size, input_dim, output_dim):
+def build_model2(params):
     """
     The function builds a keras Sequential model
     :param lookback: number of previous time steps as int
     :param batch_size: batch_size as int, defaults to 1
     :return: keras Sequential model
     """
+
+    print "[ build_model ]... with params" + str(params)
+    lookback = params['lookback']
+    batch_size = params['batch_size']
+    input_dim = params['indim']
+    output_dim = params['outdim']
+
     rrnmodel = Sequential()
     rrnmodel.add(GRU(64,
                      activation='tanh',
@@ -113,8 +120,7 @@ def build_model2(lookback, batch_size, input_dim, output_dim):
 
     final_model = Sequential()
     final_model.add(merged)
-    rrnmodel.add(Dense(16))
-    final_model.add(Dense(3, activation='softmax'))
+    final_model.add(Dense(output_dim, activation='softmax'))
 
     final_model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                         metrics=['precision', 'categorical_accuracy', 'fmeasure'])

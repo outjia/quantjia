@@ -3,11 +3,12 @@
 import easytrader as et
 import pandas as pd
 import numpy as np
-from quantjia import predict_today, predict_today_simple
+from quantjia import predict_today_simple
 from DataManager import int2str
 
 
 def adjust_position(pcode, stocks):
+    if len(stocks) ==0: return
     user = et.use('xq')
     user.prepare(user='kaoyanzone@hotmail.com', password='801010', portfolio_code=pcode)
 
@@ -25,9 +26,9 @@ def adjust_position(pcode, stocks):
 
 
 def __main__():
-    # stocks = predict_today('M1_T5_B256_C3_E100_S2000')
-    # adjust_position('ZH1036194',stocks[stocks.proba>0.6][:10])
-    stocks = predict_today('M1_T10_B256_C4_E100_S100')
+    stocks = predict_today_simple('M1_T5_B256_C3_E100_S2000')
+    adjust_position('ZH1036194',stocks[stocks.proba>0.6][:10])
+    stocks = predict_today_simple('M1_T10_B256_C4_E100_S100')
     adjust_position('ZH1037189', stocks[stocks.proba>0.5][:10])
 
 if __name__ == '__main__':
