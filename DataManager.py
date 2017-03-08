@@ -216,7 +216,7 @@ class DataManager():
         returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
         """
 
-        print "[ create_dataset ]... "
+        print "[ create_dataset simple]... "
         data_all = []
         bsset = self.get_bsdata()[bfeatures]
         bsset = bsset[bsset['pb'] > 0]
@@ -230,15 +230,16 @@ class DataManager():
             if days is None:
                 data_stock = stockset[symb][tsfeatures]
             else:
-                data_stock = stockset[symb][tsfeatures][-days:]
+                data_stock = stockset[symb][tsfeatures][-days-lookback:]
             datelist = mydate(list(data_stock.index))
             datecol = np.array(intdate(datelist)).reshape(-1,1)
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
-            for i in range(len(data_stock) - lookback - 1):
-                if data_stock['p_change'][i + lookback] >9.98: continue  # clean data un-operational
+            for i in range(len(data_stock) - lookback):
+                if data_stock['p_change'][i + lookback-1] >=9.96: continue  # clean data un-operational
                 dtcell = np.array(data_stock)[i:(i+lookback+1)]
-                ohcl = minmax_scale(dtcell[:,0:4])
-                tsdata = np.hstack([datecol[i: i+lookback], ohcl[:-1], dtcell[:-1, 4:]])
+                ohcl = minmax_scale(dtcell[:-1,0:4])
+                # 应该直对testcase进行normalization
+                tsdata = np.hstack([datecol[i: i+lookback], ohcl, dtcell[:-1, 4:]])
                 # tsdata_v = np.hstack([datecol[i: i+lookback], dtcell[:-1,:]])
                 # rtdata = np.hstack([[int(symb)], datecol[i+lookback], ohcl[-1], dtcell[-1, 4:]])
                 # rtdata_v = np.hstack([[int(symb)], datecol[i+lookback], dtcell[-1]])
@@ -276,7 +277,7 @@ class DataManager():
         :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
         :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
         """
-        print "[ create_feeddata ]..."
+        print "[ create_feeddata hp]..."
         rows = [len(dataset)]
         bsdata = np.zeros(rows + list(dataset[0][0].shape))
         tsdata = np.zeros(rows + list(dataset[0][1].shape))
@@ -305,7 +306,7 @@ class DataManager():
         :param dataset: source dataset, a list of data cell of [bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v]
         :return: tuple of (bsdata, tsdata, rtdata, lbdata, tsdata_v, rtdata_v, lbdata_v)
         """
-        print "[ create_feeddata ]..."
+        print "[ create_feeddata hp simple]..."
         rows = [len(dataset)]
         bsdata = np.zeros(rows + list(dataset[0][0].shape))
         tsdata = np.zeros(rows + list(dataset[0][1].shape))
@@ -351,7 +352,7 @@ class DataManager():
         rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
         tsdataset = []
         rtdataset = []
-        print ("[ create today's dataset ]...")
+        print ("[ create today's dataset ]... for price prodiction")
 
         tsdata_dict = self.get_newly_data(days=22)
         rtdata_df = ts.get_today_all()[rtlabels]
@@ -362,7 +363,7 @@ class DataManager():
             tsdata_df= tsdata_dict[symb]
             rtdata_v = rtset[rtset[:,0] == int(symb)][0]
             if len(tsdata_df) >= lookback -1:
-                if rtdata_v[-2] > 9.98 or rtdata_v[-4] == 0: continue
+                if rtdata_v[-2] > 9.98 or rtdata_v[-1] == 0: continue
                 tsdata_v = np.vstack([np.array(tsdata_df), rtdata_v[1:]])[-lookback:]
                 ohcl = minmax_scale(tsdata_v[:,0:4])
                 tsdata = np.hstack([ohcl, tsdata_v[:, 4:]])
@@ -385,7 +386,7 @@ class DataManager():
         """
         rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
         data_all = []
-        print ("[ create today's dataset ]...")
+        print ("[ create dataset ]... for validation day by day")
         sdate = datetime.date.today() - timedelta(days=30)
         sdate = sdate.strftime('%Y-%m-%d')
 
@@ -406,7 +407,7 @@ class DataManager():
             bsdata = bsset[bsset[:,0]==int(symb)][0]  # sym,...
             if len(tsdata_df) >= lookback + days:
                 dtcell = np.array(tsdata_df)[-lookback-days:]
-                ohcl = minmax_scale(dtcell[:,0:4])
+                ohcl = minmax_scale(dtcell[:,0:4]) ## TODO error here, not testcase level normalization
                 tsdata = np.hstack([datecol[-lookback-days:], ohcl, dtcell[:, 4:]])
                 tsdata_v = np.hstack([datecol[-lookback-days:], dtcell])
                 lbdata_v = np.hstack([np.zeros((days,1))+int(symb), datecol[-days:], dtcell[-days:]])

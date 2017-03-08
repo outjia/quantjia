@@ -44,6 +44,7 @@ def parse_params(mstr):
 
 def train_model_simple(mstr):
     params = parse_params(mstr)
+    print ("[ train model ]... " + mstr)
     dataset = dmr.create_dataset_simple(params['stocks'], params['lookback'])
     train, test = dmr.split_dataset(dataset, 0.75, params['batch_size'])
     bstrain, tstrain, lbtrain_v = dmr.create_feeddata_hp_simple(train)
@@ -83,8 +84,9 @@ def train_model_simple(mstr):
 
 
 def predict_today_simple(mstr):
+    print ("[ select stocks ]... using model:" + mstr)
     params = parse_params(mstr)
-    cust_objs = {params['custmetric']:eval('mdm.'+params['custmetric'])}
+    cust_objs = {params['custmetric']:eval('mdm.'+params['custmetric']), 'top_t1p1_class':mdm.top_t1p1_class}
     tsdata, rtdata_v = dmr.create_today_dataset_simple(params['lookback'])
     model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=cust_objs)
 
@@ -109,9 +111,35 @@ def predict_today_simple(mstr):
     return candidates
 
 
-def validate_model(mstr, days=8):
+def validate_model2(mstr, days=8):
+    print ("[ valid model: %s ]... with latest %s days data"%(mstr,str(days)))
     params = parse_params(mstr)
-    cust_objs = {params['custmetric']:eval('mdm.'+params['custmetric'])}
+    cust_objs = {params['custmetric']:eval('mdm.'+params['custmetric']), 'top_t1p1_class':mdm.top_t1p1_class}
+    model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=cust_objs)
+    valset = dmr.create_dataset_simple(3100, params['lookback'], days=days)
+    bsvalset, tsvalset, lbvalset_v = dmr.create_feeddata_hp_simple(valset)
+
+    test_x = tsvalset[:,:,1:]
+    test_y_v = lbvalset_v
+
+    if model.stateful:
+        test_x = test_x[:len(test_x) / params['batch_size'] * params['batch_size']]
+        test_y_v = test_y_v[:len(test_y_v) / params['batch_size'] * params['batch_size']]
+    proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
+
+    out = np.hstack([proba, test_y_v])
+    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
+
+    if not __debug__:
+        np.savetxt("./models/" + params['model_name'] + "/val_newlydata_result.txt", sortout, fmt='%f')
+    else:
+        print sortout[0:200, :]
+    return sortout
+
+
+def validate_model(mstr, days=1):
+    params = parse_params(mstr)
+    cust_objs = {params['custmetric']:eval('mdm.'+params['custmetric']), 'top_t1p1_class':mdm.top_t1p1_class}
     bsdata, tsdata, tsdata_v, lbdata_v = dmr.create_val_dataset(params['lookback'], days=days)
     model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=cust_objs)
 
@@ -134,7 +162,9 @@ def validate_model(mstr, days=8):
 
 
 def _main_():
-    if(len(sys.argv) > 2):
+    if(len(sys.argv) > 3):
+        eval(sys.argv[1])(sys.argv[2], int(sys.argv[3]))
+    elif(len(sys.argv) > 2):
         eval(sys.argv[1])(sys.argv[2])
     else:
         eval(sys.argv[1])()

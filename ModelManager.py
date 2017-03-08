@@ -85,7 +85,7 @@ def build_model(params):
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', eval(params['custmetric']), 'fmeasure'])
+                  metrics=['precision', eval(params['custmetric']), 'fmeasure', top_t1p1_class])
     print "Finish building model"
     return model
 
