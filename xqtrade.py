@@ -3,7 +3,7 @@
 import easytrader as et
 import pandas as pd
 import numpy as np
-from quantjia import predict_today_simple
+from quantjia import *
 from DataManager import int2str
 
 
@@ -26,9 +26,11 @@ def adjust_position(pcode, stocks):
 
 
 def __main__():
-    stocks = predict_today_simple('M1_T5_B256_C3_E100_S2000')
+    file = os.path.realpath(__file__)
+    os.chdir(os.path.dirname(file))
+    stocks = predict_today('M1_T10_B248_C3_E300_S3200_Little_GRU_D300')
     adjust_position('ZH1036194',stocks[stocks.proba>0.6][:10])
-    stocks = predict_today_simple('M1_T10_B256_C4_E100_S100')
+    stocks = predict_today('M1_T10_B248_C4_E300_S3200_Little_D300')
     adjust_position('ZH1037189', stocks[stocks.proba>0.5][:10])
 
 if __name__ == '__main__':
