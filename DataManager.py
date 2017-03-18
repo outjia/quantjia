@@ -83,12 +83,18 @@ def minmax_scale(arr):
     arr = (arr-mi)/(mx-mi+K.epsilon())
     return arr
 
-
 def pricechange_scale(arr):
     mi = np.min(arr)
     arr = (arr-mi)/(mi+K.epsilon())*100
     return arr
 
+def catf2(data):
+    data_y = data.copy()
+    data_y[data_y < 1] = 11
+    data_y[data_y < 10.5] = 12
+    data_y -= 11
+    data_y = np_utils.to_categorical(data_y, 2)
+    return data_y
 
 def catf3(data):
     data_y = data.copy()
@@ -98,7 +104,6 @@ def catf3(data):
     data_y -= 11
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
-
 
 def catf4(data):
     data_y = data.copy()
@@ -484,8 +489,6 @@ def main():
     # a = minmax_scale(arr)
     # print a
     # print arr
-
-
 
 if __name__ == '__main__':
     main()

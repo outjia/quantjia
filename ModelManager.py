@@ -5,12 +5,27 @@ import time
 import numpy as np
 from DataManager import *
 import keras.backend as K
-from keras.layers import Dense, Activation, GRU, Dropout, Merge, SimpleRNN
-from keras.metrics import top_k_categorical_accuracy, precision
+from keras.regularizers import l1, l1_l2, l2
+from keras.layers import Dense, Activation, GRU, Dropout, SimpleRNN
+# from keras.metrics import
 from keras.models import Sequential, save_model
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 
 signature = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
+
+
+def recall(y_true, y_pred):
+    """Recall metric.
+
+    Only computes a batch-wise average of recall.
+
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
 
 
 def top_k_class(y_true, y_pred, tk, pk):
@@ -76,12 +91,17 @@ def build_model(params):
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.5))
-    model.add(Dense(32, activation='tanh'))
+    model.add(Dense(32, activation='tanh', W_regularizer=l2(0.01), activity_regularizer=l2(0.01)))
     model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
+    model.add(Dense(output_dim, W_regularizer=l2(0.01), activity_regularizer=l2(0.01)))
     model.add(Activation('softmax'))
+    if params['outdim'] > 3:
+        mes = ['categorical_accuracy', recall,eval(params['custmetric']), top_t1p1]
+    else:
+        mes = ['categorical_accuracy', recall, eval(params['custmetric'])]
+
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=['precision', 'recall', eval(params['custmetric']), top_t1p1])
+                  metrics=mes)
     print "Finish building model"
     return model
 
@@ -119,8 +139,13 @@ def build_model2(params):
     final_model.add(merged)
     final_model.add(Dense(outdim, activation='softmax'))
 
+    if params['outdim'] > 3:
+        metrics = ['precision', eval(params['custmetric']), top_t1p1, 'fmeasure']
+    else:
+        metrics = ['precision', eval(params['custmetric']), 'fmeasure']
+
     final_model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                        metrics=['precision', eval(params['custmetric']), top_t1p1, 'fmeasure'])
+                        metrics=metrics)
     return final_model
 
 

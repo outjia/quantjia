@@ -18,9 +18,9 @@ def parse_params(mstr):
     # M1_T5_B256_C3_E100_S3100_
     # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, stocks = 3100,
 
-    catf = {'C3':'catf3', 'C4':'catf4'}
+    catf = {'C3':'catf3', 'C4':'catf4', 'C2':'catf2'}
     models = {'M1':'build_model', 'M2':'build_model2', 'M3':'build_model3'}
-    custmetrics = {'C3':'top_t1p1', 'C4':'top_t2p1'}
+    custmetrics = {'C3':'top_t1p1', 'C4':'top_t2p1','C2':'top_t1p1'}
     params = {}
     params['model_name'] = mstr
     mstr_arr = str(mstr).split('_')
@@ -66,7 +66,7 @@ def train_model(mstr, days=None):
     if not os.path.exists(model_dir): os.makedirs(model_dir)
     callbacks = [
         EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='min'),
-        ModelCheckpoint(path+'/checkpoint_model.h5', monitor='val_'+params['custmetric'], save_best_only=True, verbose=0),
+        ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['custmetric'], save_best_only=True, verbose=0, mode='max'),
         TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
     model = eval(params['model'])(params)
@@ -114,7 +114,7 @@ def train_model2(mstr, days=None):
     if not os.path.exists(model_dir): os.makedirs(model_dir)
     callbacks = [
         EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='min'),
-        ModelCheckpoint(path+'/checkpoint_model.h5', monitor='val_'+params['custmetric'], save_best_only=True, verbose=0),
+        ModelCheckpoint(path+'/checkpoint_model.h5', monitor='val_'+params['custmetric'], save_best_only=True, verbose=0, mode='max'),
         TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
     model = eval(params['model'])(params)
@@ -137,18 +137,26 @@ def train_model2(mstr, days=None):
 def validate_model(mstr, days=8):
     print ("[ valid model: %s ]... with latest %s days data"%(mstr,str(days)))
     params = parse_params(mstr)
-    cust_objs = {params['custmetric']:eval(params['custmetric']), 'top_t1p1':top_t1p1}
-    model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=cust_objs)
+    if params['outdim'] > 3:
+        cust_objs = {params['custmetric']:eval(params['custmetric']),'recall':recall, 'top_t1p1':top_t1p1}
+    else:
+        cust_objs = {params['custmetric']: eval(params['custmetric']),'recall':recall}
+
+    model = load_model('./models/'+params['model_name']+'/best_model.h5',custom_objects=cust_objs)
 
     valset = create_dataset(3100, params['lookback'], days, 8)
     bsvalset, tsvalset, lbvalset_v = create_feeddata(valset)
 
     test_x = tsvalset[:,:,1:]
+    test_y = eval(params['catf'])(lbvalset_v[:, 2])
     test_y_v = lbvalset_v
 
     if model.stateful:
         test_x = test_x[:len(test_x) / params['batch_size'] * params['batch_size']]
+        test_y = test_y[:len(test_y) / params['batch_size'] * params['batch_size']]
         test_y_v = test_y_v[:len(test_y_v) / params['batch_size'] * params['batch_size']]
+    print model.evaluate(test_x, test_y, verbose=0, batch_size=params['batch_size'])
+
     proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
     out = np.hstack([proba, test_y_v])
     sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
@@ -157,12 +165,6 @@ def validate_model(mstr, days=8):
     else:
         print sortout[0:200, :]
 
-    # if os.path.exists('./models/' + params['model_name'] + '/checkpoint_model.h5'):
-    #     model_bk = load_model('./models/' + params['model_name'] + '/checkpoint_model.h5', custom_objects=cust_objs)
-    #     proba_bk = model_bk.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    #     out_bk = np.hstack([proba_bk, test_y_v])
-    #     sortout_bk = out_bk[(-out_bk[:, proba_bk.shape[proba_bk.ndim - 1] - 1]).argsort(), :]
-    #     np.savetxt("./models/" + params['model_name'] + "/val_cpt_newlydata_result_"+str(days)+".txt", sortout_bk, fmt='%f')
     bins = np.arange(0,1,0.1)
     idx = params['outdim'] - 1
     labels = bins.searchsorted(sortout[:, idx])
@@ -221,7 +223,7 @@ def predict_batch():
 def predict_today(mstr, path='./models/'):
     print ("[ select stocks ]... using model:" + mstr)
     params = parse_params(mstr)
-    cust_objs = {params['custmetric']:eval(''+params['custmetric']), 'top_t1p1':top_t1p1}
+    cust_objs = {params['custmetric']:eval(''+params['custmetric']), 'recall':recall, 'top_t1p1':top_t1p1}
     model = load_model(path+params['model_name']+'/model.h5',custom_objects=cust_objs)
 
     tsdata, rtdata_v = create_today_dataset(params['lookback'])
