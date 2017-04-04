@@ -27,6 +27,37 @@ def recall(y_true, y_pred):
     recall = true_positives / (possible_positives + K.epsilon())
     return recall
 
+def top_k_recall(y_true, y_pred, k):
+    # chance of predict_class_highest in top k classes
+    y_pred_k = y_pred[::, - k:]
+    y_true_k = y_true[::, - k:]
+    true_positives = K.sum(K.round(K.clip(y_true_k * y_pred_k, 0, 1)))
+    positives = K.sum(K.round(K.clip(y_true_k, 0, 1)))
+    recall = true_positives / (positives + K.epsilon())
+    return recall
+
+
+def top1_recall(y_true, y_pred):
+    return top_k_recall(y_true, y_pred, 1)
+
+
+def top2_recall(y_true, y_pred):
+    return top_k_recall(y_true, y_pred, 2)
+
+
+def precision(y_true, y_pred):
+    """Precision metric.
+
+    Only computes a batch-wise average of precision.
+
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
+
 
 def top_k_class(y_true, y_pred, tk, pk):
     # chance of predict_class_highest in top k classes
@@ -91,17 +122,44 @@ def build_model(params):
                   stateful=True,
                   return_sequences=False))
     model.add(Dropout(0.5))
-    model.add(Dense(32, activation='tanh', W_regularizer=l2(0.01), activity_regularizer=l2(0.01)))
+    model.add(Dense(16, activation='tanh'))
     model.add(Dropout(0.5))
-    model.add(Dense(output_dim, W_regularizer=l2(0.01), activity_regularizer=l2(0.01)))
+    model.add(Dense(output_dim))
     model.add(Activation('softmax'))
-    if params['outdim'] > 3:
-        mes = ['categorical_accuracy', recall,eval(params['custmetric']), top_t1p1]
-    else:
-        mes = ['categorical_accuracy', recall, eval(params['custmetric'])]
-
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=mes)
+                  metrics=params['metrics'])
+    print "Finish building model"
+    return model
+
+def build_model4(params):
+    """
+    The function builds a keras Sequential model
+    :param lookback: number of previous time steps as int
+    :param batch_size: batch_size as int, defaults to 1
+    :return: keras Sequential model
+    """
+
+    print "[ build_model ]... with params" + str(params)
+    lookback = params['lookback']
+    batch_size = params['batch_size']
+    input_dim = params['indim']
+    output_dim = params['outdim']
+
+    model = Sequential()
+    model.add(GRU(64,
+                  activation='tanh',
+                  batch_input_shape=(batch_size, lookback, input_dim),
+                  stateful=True,
+                  return_sequences=False))
+    model.add(Dropout(0.5))
+    model.add(Dense(16, activation='tanh'))
+    model.add(Dropout(0.5))
+    model.add(Dense(16, activation='tanh'))
+    model.add(Dropout(0.5))
+    model.add(Dense(output_dim))
+    model.add(Activation('softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+                  metrics=params['metrics'])
     print "Finish building model"
     return model
 

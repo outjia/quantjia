@@ -21,8 +21,8 @@ import tushare as ts
 from datetime import date
 from datetime import timedelta
 from sklearn import preprocessing
-
 import keras.backend as K
+
 from keras.utils import np_utils
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
@@ -105,6 +105,15 @@ def catf3(data):
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
 
+def catf31(data):
+    data_y = data.copy()
+    data_y[data_y < 1] = 31
+    data_y[data_y < 5] = 32
+    data_y[data_y < 30] = 33
+    data_y -= 31
+    data_y = np_utils.to_categorical(data_y, 3)
+    return data_y
+
 def catf4(data):
     data_y = data.copy()
     data_y[data_y < -1] = 11
@@ -158,7 +167,7 @@ def refresh_data(start='2005-01-01', trytimes=10):
         i = 0
         while i < len(symbs):
             try:
-                df = ts.get_hist_data(symbs[i], start)
+                df = ts.get_h_data(symbs[i], start)
             except:
                 failsymbs.append(symbs[i])
                 print "Exception when processing " + symbs[i]
@@ -167,7 +176,10 @@ def refresh_data(start='2005-01-01', trytimes=10):
                 continue
 
             if df is not None and len(df) > 0:
+                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
                 df = df[::-1]
+                df['p_change'] = df['close'].diff()/df['close'][1:] * 100
+                df['turnover'] = df['volume']/outstanding * 100
                 df.to_csv(data_path + symbs[i] + '.csv')
                 df.to_csv('./data/daily/' + symbs[i] + '.csv')
             else:
@@ -195,7 +207,7 @@ def get_basic_data(online=False, cache=True):
     return basics
 
 
-def get_history_data(symb_num, totals=None):
+def get_history_data(symb_num, totals=None, start=None, end=None):
     print ("[ get history data ]... for %i symbols" % (symb_num))
     # if symbols is None: return
     refresh_data()
@@ -209,7 +221,7 @@ def get_history_data(symb_num, totals=None):
         try:
             df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
             if df is not None:
-                data_dict[symbols[i]] = df
+                data_dict[symbols[i]] = df.loc[start:end][1:]
         except:
             if __debug__:
                 print "Can't get data for symbol:" + str(symbols[i])
@@ -221,10 +233,15 @@ def get_history_data(symb_num, totals=None):
     return data_dict
 
 
-def get_newly_data(days=0):
+def get_newly_data(days=None):
     print ("[ get newly data]... for %s days"%(str(days)))
     dt = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
     today_file = './data/' + dt + '/newlydata.h5'
+    end = dt
+    if days is not None:
+        start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+    else:
+        start = None
     if os.path.exists(today_file):
         f = h5py.File(today_file, 'r')
         return f
@@ -239,14 +256,14 @@ def get_newly_data(days=0):
         except:
             print "Can't get data for symbol:" + str(symbols[i])
         if df is not None:
-            df = df[-days:][tsfeatures]
+            df = df.loc[start:end][tsfeatures]
             f.create_dataset(symbols[i], data=np.array(df.astype(float)))
         i += 1
     f.flush()
     return f
 
 
-def create_dataset(sym_num, lookback=5, days=None, totals=None):
+def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
     """
     The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
     and the `lookback`, which is the number of previous time steps to use as input variables
@@ -257,27 +274,28 @@ def create_dataset(sym_num, lookback=5, days=None, totals=None):
     """
 
     print ("[ create_dataset]... look_back:%s"%lookback)
+
+    sdate = datetime.datetime.strptime(start,'%Y-%m-%d')
+    start = (sdate - timedelta(days=lookback/5*2+lookback)).strftime('%Y-%m-%d')
+
     data_all = []
     bsset = get_basic_data()[bfeatures]
     bsset = bsset[bsset['pb'] > 0]
     symblist = intstr(list(bsset.index))
     bsset = preprocessing.scale(bsset)
     bsset = np.hstack([np.array(symblist).reshape(-1, 1), bsset])
-
-    stockset = get_history_data(sym_num, totals)
+    stockset = get_history_data(sym_num, totals, start, end)
     for symb in stockset:
         if int(symb) not in symblist: continue
         bsdata = bsset[bsset[:, 0] == int(symb)][0]  # sym,...
 
         data_stock = stockset[symb][tsfeatures]
-        if days is not None:
-            data_stock = data_stock.iloc[-lookback-days:,:]
         datelist = mydate(list(data_stock.index))
         datecol = np.array(intdate(datelist)).reshape(-1, 1)
         p_change = np.array(data_stock['p_change'].clip(-10, 10))
 
         ndata_stock = np.array(data_stock)
-        for i in range(len(ndata_stock) - lookback):
+        for i in range(len(ndata_stock) - lookback - 2):
             if ndata_stock[i+lookback-1,-2] > 9.96:
                 continue  # clean data un-operational
             dtcell = ndata_stock[i:(i + lookback)]
@@ -286,7 +304,7 @@ def create_dataset(sym_num, lookback=5, days=None, totals=None):
             turnover = minmax_scale(dtcell[:,-1]).reshape(-1,1)
             # 应该直对testcase进行normalization
             tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])
-            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback], data_stock.iloc[i+lookback]])
+            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback:i+lookback+3], sum(p_change[i+lookback:i+lookback+3])])
             data_cell = [bsdata, tsdata, lbdata]
             data_all.append(data_cell)
     print "[ Finish create data set]"
@@ -325,46 +343,6 @@ def create_today_dataset(lookback=5):
             turnover = minmax_scale(ndata_stock[:,-1].reshape(-1, 1))
             ohcl = minmax_scale(ndata_stock[:, 0:4])
             tsdata = np.hstack([ohcl, p_change, turnover])
-            tsdataset.append(tsdata)
-            rtdataset.append(rtdata_v)
-    tsdataset = np.array(tsdataset)
-    rtdataset = np.array(rtdataset)
-    tsdata_dict.close()
-    return tsdataset, rtdataset
-
-
-def create_yesterday_dataset(lookback=5):
-    """
-    The function takes the `lookback`, which is the number of previous
-    time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([bsdata, tsdata, lbdata])
-    """
-    rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
-    tsdataset = []
-    rtdataset = []
-    print ("[ create today's dataset ]... for price prediction")
-
-    tsdata_dict = get_newly_data(days=22)
-    rtdata_df = ts.get_today_all()[rtlabels]
-    symbs = np.array(rtdata_df['code'])
-    rtset = np.array(rtdata_df.astype(float))
-    for symb in tsdata_dict:
-        if int(symb) not in intstr(symbs): continue
-        tsdata_df = tsdata_dict[symb]
-        rtdata_v = rtset[rtset[:, 0] == int(symb)][0]
-
-        if rtdata_v[-2] > 9.94 or rtdata_v[-1] == 0:
-            continue
-        if tsdata_df.index[-1] == rtdata_v.iloc[0,'date']:
-            tsdata_v = np.vstack([np.array(tsdata_df), rtdata_v[1:]])[-lookback:]
-        else:
-            tsdata_v = np.array(tsdata_df)[-lookback:]
-
-        if len(tsdata_v) == lookback:
-            ohcl = minmax_scale(tsdata_v[:, 0:4])
-            tsdata = np.hstack([ohcl, tsdata_v[:, 4:]])
             tsdataset.append(tsdata)
             rtdataset.append(rtdata_v)
     tsdataset = np.array(tsdataset)
@@ -415,6 +393,9 @@ def create_feeddata(dataset):
         lbdata_v[i] = dataset[i][2]
         i += 1
 
+    # bsdata = bsdata[:len(bsdata) / params['batch_size'] * params['batch_size']]
+    # tsdata = tsdata[:len(tsdata) / params['batch_size'] * params['batch_size']]
+    # lbdata_v = lbdata_v[:len(lbdata_v) / params['batch_size'] * params['batch_size']]
     print "[ end create_feeddata]..."
     return bsdata, tsdata, lbdata_v
 
@@ -481,8 +462,7 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-
-    create_yesterday_dataset(5)
+    pass
 
     # arr = np.arange(12).reshape(3,4)
     # print arr
