@@ -90,9 +90,9 @@ def pricechange_scale(arr):
 
 def catf2(data):
     data_y = data.copy()
-    data_y[data_y < 1] = 11
-    data_y[data_y < 10.5] = 12
-    data_y -= 11
+    data_y[data_y < 1] = 31
+    data_y[data_y < 31] = 32
+    data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
     return data_y
 
@@ -107,8 +107,8 @@ def catf3(data):
 
 def catf31(data):
     data_y = data.copy()
-    data_y[data_y < 1] = 31
-    data_y[data_y < 5] = 32
+    data_y[data_y < 0.5] = 31
+    data_y[data_y < 3] = 32
     data_y[data_y < 30] = 33
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 3)
@@ -146,17 +146,17 @@ def test_plot(mstr):
     plot_out(d, 2, 3)
 
 
-def refresh_data(start='2005-01-01', trytimes=10):
+def refresh_data(start='2005-01-01', trytimes=10, force=False):
     # refresh history data
     # trytimes, times to try
 
     edate = datetime.date.today() - timedelta(days=1)
     edate = edate.strftime('%Y-%m-%d')
     data_path = './data/' + edate + '/'
-    if os.path.exists(data_path):
-        return
-    else:
+    if not os.path.exists(data_path):
         os.makedirs(data_path)
+    elif not force:
+        return
     print ("[ refresh_data ]... start date:%s" % (start))
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
@@ -167,7 +167,7 @@ def refresh_data(start='2005-01-01', trytimes=10):
         i = 0
         while i < len(symbs):
             try:
-                df = ts.get_h_data(symbs[i], start)
+                df = ts.get_k_data(symbs[i], start,edate)
             except:
                 failsymbs.append(symbs[i])
                 print "Exception when processing " + symbs[i]
@@ -176,8 +176,8 @@ def refresh_data(start='2005-01-01', trytimes=10):
                 continue
 
             if df is not None and len(df) > 0:
-                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
                 df = df[::-1]
+                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
                 df['p_change'] = df['close'].diff()/df['close'][1:] * 100
                 df['turnover'] = df['volume']/outstanding * 100
                 df.to_csv(data_path + symbs[i] + '.csv')
@@ -197,20 +197,19 @@ def refresh_data(start='2005-01-01', trytimes=10):
 
 
 def get_basic_data(online=False, cache=True):
-    print ("[ get basic data ]... online(%s)" % (str(online)))
     if online is False:
         basics = pd.read_csv('./data/basics.csv', index_col=0, dtype={'code': str})
     else:
         basics = ts.get_stock_basics()
-        if cache is True: basics.to_csv('./data/basics.csv')
-    print ("[ End get basic data ]")
+        if cache is True and basics is not None:
+            basics.to_csv('./data/basics.csv')
     return basics
 
 
 def get_history_data(symb_num, totals=None, start=None, end=None):
     print ("[ get history data ]... for %i symbols" % (symb_num))
     # if symbols is None: return
-    refresh_data()
+    # refresh_data()
     basics = get_basic_data()
     symbols = int2str(list(basics.index))
     data_dict = {}
@@ -219,8 +218,9 @@ def get_history_data(symb_num, totals=None, start=None, end=None):
         # 小市值股票
         if totals is not None and basics.iloc[i]['totals'] > totals: i += 1; continue
         try:
-            df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
+            df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='date', dtype={'code': str})
             if df is not None:
+                df = df[::-1]
                 data_dict[symbols[i]] = df.loc[start:end][1:]
         except:
             if __debug__:
@@ -233,34 +233,89 @@ def get_history_data(symb_num, totals=None, start=None, end=None):
     return data_dict
 
 
-def get_newly_data(days=None):
+def get_newly_data(days=300):
     print ("[ get newly data]... for %s days"%(str(days)))
-    dt = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-    today_file = './data/' + dt + '/newlydata.h5'
-    end = dt
-    if days is not None:
-        start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-    else:
-        start = None
+
+    start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+    end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+    today_file = './data/' + end + '/newlydata.h5'
     if os.path.exists(today_file):
         f = h5py.File(today_file, 'r')
         return f
-    refresh_data()
-    basics = get_basic_data()
+
+    basics = ts.get_stock_basics()
     symbols = int2str(list(basics.index))
     f = h5py.File(today_file, 'w')
     i = 0
     while i < len(symbols):
         try:
-            df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col=0, dtype={'code': str})
+            df = ts.get_h_data(symbols[i], start, end)
         except:
-            print "Can't get data for symbol:" + str(symbols[i])
-        if df is not None:
-            df = df.loc[start:end][tsfeatures]
-            f.create_dataset(symbols[i], data=np.array(df.astype(float)))
+            traceback.print_exc()
+            i += 1
+            continue
+
+        if df is not None and len(df) > 0:
+            outstanding = basics.loc[symbols[i]]['outstanding'] * 100000000
+            df = df[::-1]
+            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
+            df['turnover'] = df['volume'] / outstanding * 100
+            df = df[tsfeatures]
+            f.create_dataset(symbols[i], data=np.array(df[1:].astype(float)))
         i += 1
     f.flush()
     return f
+
+
+def get_newly_data2(start='2005-01-01', trytimes=10):
+    # refresh history data
+    # trytimes, times to try
+
+    print ("[ get newly data]... from day %s"%(str(start)))
+
+    end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
+    today_file = './data/newlydata_' + str(intdate(mydate(end))) + '.h5'
+    if os.path.exists(today_file):
+        f = h5py.File(today_file, 'r')
+        return f
+
+    basics = ts.get_stock_basics()
+    if basics is None or len(basics) == 0:
+        basics = pd.read_csv('./data/basics.csv', index_col=0, dtype={'code': str})
+    else:
+        basics.to_csv('./data/basics.csv')
+    symbols = list(basics.index)
+    f = h5py.File(today_file, 'w')
+    def trymore(symbs, times):
+        failsymbs = []
+        i = 0
+        while i < len(symbs):
+            try:
+                df = ts.get_hist_data(symbs[i], start)[::-1]
+            except:
+                failsymbs.append(symbs[i])
+                traceback.print_exc()
+                i += 1
+                continue
+
+            if df is not None and len(df) > 0:
+                datecol = np.array(intdate(mydate(list(df.index)))).reshape(-1, 1)
+                df['p_change'] = df['p_change'].clip(-10, 10)
+                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
+                df['turnover'] = df['volume']/outstanding * 100
+                f.create_dataset(symbols[i], data=np.hstack([datecol,np.array(df[tsfeatures].astype(float))]))
+            else:
+                failsymbs.append(symbs[i])
+            i += 1
+        if len(failsymbs) > 0:
+            print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
+            if times - 1 > 0:
+                times -= 1
+                trymore(failsymbs, times)
+            else:
+                return
+    trymore(symbols, trytimes)
+    print ("[ end get newlydata ]")
 
 
 def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
@@ -296,19 +351,56 @@ def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
 
         ndata_stock = np.array(data_stock)
         for i in range(len(ndata_stock) - lookback - 2):
-            if ndata_stock[i+lookback-1,-2] > 9.96:
+            if ndata_stock[i+lookback-1,-2] > 9.94:
                 continue  # clean data un-operational
             dtcell = ndata_stock[i:(i + lookback)]
             ohcl = minmax_scale(dtcell[:, 0:4])
             pchange = p_change[i:(i + lookback)].reshape(-1,1)/10
             turnover = minmax_scale(dtcell[:,-1]).reshape(-1,1)
             # 应该直对testcase进行normalization
-            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])
-            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback:i+lookback+3], sum(p_change[i+lookback:i+lookback+3])])
+            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])+K.epsilon()
+            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback-1:i+lookback+3], sum(p_change[i+lookback:i+lookback+2])])
             data_cell = [bsdata, tsdata, lbdata]
             data_all.append(data_cell)
     print "[ Finish create data set]"
     return data_all
+
+
+def create_val_dataset(start, end, lookback, totals=5):
+    """
+    The function takes the `lookback`, which is the number of previous
+    time steps to use as input variables
+    to predict the next time period — in this case defaulted to 5.
+    lookback: number of previous time steps as int
+    returns a list of data cells of format([bsdata, tsdata, lbdata])
+    """
+
+    print ("[ create validation dataset ]... ")
+    tsdataset = []
+    lbdataset = []
+    basics = get_basic_data()
+    tsdata_dict = get_newly_data2()
+    start = intdate(mydate(start))
+    end = intdate(mydate(end))
+    for symb in tsdata_dict:
+        if basics.loc[int(symb)]['totals'] > totals: continue
+        data_stock = np.array(tsdata_dict[symb])
+        data_stock = data_stock[np.logical_and(data_stock[:,0]<=end,start<=data_stock[:,0])]
+        for i in range(len(data_stock) - lookback - 2):
+            if data_stock[i+lookback-1,-2] > 9.96:
+                continue  # clean data un-operational
+            ohcl = minmax_scale(data_stock[i:(i + lookback),1:5])
+            pchange = data_stock[i:(i + lookback),-2].reshape(-1,1)/10
+            turnover = minmax_scale(data_stock[i:(i + lookback),-1]).reshape(-1,1)
+            # 应该直对testcase进行normalization
+            tsdata = np.hstack([data_stock[i:i+lookback,0].reshape(-1,1), ohcl, pchange, turnover])
+            lbdata = np.hstack([[int(symb)], data_stock[i+lookback:i+lookback+3,-2], sum(data_stock[i+lookback:i+lookback+3,-2])])
+            tsdataset.append(tsdata)
+            lbdataset.append(lbdata)
+    tsdataset = np.array(tsdataset)
+    lbdataset = np.array(lbdataset)
+    tsdata_dict.close()
+    return tsdataset, lbdataset
 
 
 def create_today_dataset(lookback=5):
@@ -392,23 +484,16 @@ def create_feeddata(dataset):
         tsdata[i] = dataset[i][1]
         lbdata_v[i] = dataset[i][2]
         i += 1
-
-    # bsdata = bsdata[:len(bsdata) / params['batch_size'] * params['batch_size']]
-    # tsdata = tsdata[:len(tsdata) / params['batch_size'] * params['batch_size']]
-    # lbdata_v = lbdata_v[:len(lbdata_v) / params['batch_size'] * params['batch_size']]
     print "[ end create_feeddata]..."
     return bsdata, tsdata, lbdata_v
 
 
 def balance_data(data_y, data_x, data_x2=None):
-    # step1: create_dataset
-    # step2: split_dataset
-    # step3: balance_dataset
-    # step4: create_feeddata
+    # 对于数据倾斜（数据类别不平衡），此函数对少数类的样本进行复制，以消除类别的不平衡
     a = np.sum(data_y,axis=0)
     print "Category distribution before balancing"
     print a
-    b = np.max(a)/a
+    b = np.max(a)/(a)
     c = long(np.sum(a * b))
     data_xx = np.zeros([c]+list(data_x.shape[1:]))
     data_yy = np.zeros([c]+list(data_y.shape[1:]))
@@ -462,7 +547,10 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    pass
+    refresh_data(force=True)
+
+#    get_newly_data2('2016-01-01', 10)
+#    pass
 
     # arr = np.arange(12).reshape(3,4)
     # print arr
