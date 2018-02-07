@@ -33,6 +33,8 @@ bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'peru
 tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
 tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
+st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
+
 
 def mydate(datestr):
     if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
@@ -90,7 +92,7 @@ def pricechange_scale(arr):
 
 def catf2(data):
     data_y = data.copy()
-    data_y[data_y < 1] = 31
+    data_y[data_y < 0.5] = 31
     data_y[data_y < 31] = 32
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
@@ -160,6 +162,7 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
     print ("[ refresh_data ]... start date:%s" % (start))
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
+
     symbols = list(basics.index)
 
     def trymore(symbs, times):
@@ -193,6 +196,40 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
             else:
                 return
     trymore(symbols, trytimes)
+
+    # 增加指数K线数据
+    index = ts.get_index()
+    for symb in list(index.code):
+        df = ts.get_k_data(symb, start, edate)
+        if df is not None and len(df) > 0:
+            df = df[::-1]
+            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
+            df['turnover'] = minmax_scale(np.array(df['volume']))
+            df.to_csv(data_path + symb + '.csv')
+            df.to_csv('./data/daily/' + symb + '.csv')
+
+
+    print "获取指数成分股列表"
+    clist = ts.get_sme_classified()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/sme.csv')
+
+    clist = ts.get_gem_classified()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/gem.csv')
+
+    clist = ts.get_hs300s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/hs300s.csv')
+
+    clist = ts.get_sz50s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/sz50s.csv')
+
+    clist = ts.get_zz500s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/zz500s.csv')
+
     print ("[ end refresh_data ]")
 
 
@@ -206,17 +243,28 @@ def get_basic_data(online=False, cache=True):
     return basics
 
 
-def get_history_data(symb_num, totals=None, start=None, end=None):
+def get_index_list(m):
+    listfile = './data/'+ m +'.csv'
+    return pd.read_csv(listfile, index_col=0, dtype={'code': str})
+
+
+def get_history_data(symb_num, totals=None, start=None, end=None, index='gem'):
     print ("[ get history data ]... for %i symbols" % (symb_num))
     # if symbols is None: return
     # refresh_data()
     basics = get_basic_data()
-    symbols = int2str(list(basics.index))
+    index_list = get_index_list(index)
+    symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
+
     data_dict = {}
     i = 0
     while i < len(symbols) and i < symb_num:
         # 小市值股票
-        if totals is not None and basics.iloc[i]['totals'] > totals: i += 1; continue
+        # if totals is not None and basics.iloc[i]['totals'] > totals: i += 1; continue
+
+        # 创业板, 使用index代替硬编码
+        # if not symbols[i].startswith('300'): i +=1; continue
+
         try:
             df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='date', dtype={'code': str})
             if df is not None:

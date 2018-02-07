@@ -17,8 +17,8 @@ import sys
 
 
 def parse_params(mstr):
-    # M1_T5_B256_C3_E100_S3100_L3
-    # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, stocks = 3100,
+    # M1_T5_B256_C3_E100_S3100_L3_Mgem
+    # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, stocks = 3100, mem = 'gem'
 
     catf = {'C3':'catf3', 'C4':'catf4', 'C2':'catf2', 'C31':'catf31','C1':''}
     models = {'M1':'build_model', 'M2':'build_model2', 'M3':'build_model3', 'M4':'build_model4', 'M5':'build_model5'}
@@ -28,6 +28,7 @@ def parse_params(mstr):
     params['cmetrics'] = {'recall':recall, 'top1_recall':top1_recall, 'top_t1p1':top_t1p1}
     params['main_metric'] = {'top_t1p1':top_t1p1}
     params['totals'] = 5
+
     mstr_arr = str(mstr).upper().split('_')
     for s in mstr_arr:
         if s.startswith('M'):
@@ -52,6 +53,8 @@ def parse_params(mstr):
                 params['totals'] = int(s[6:])
             else:
                 params['totals'] = int(s[1:])
+        if s.startswith('M'):
+            params['mem'] = s[1:]
     params['metrics'].extend(sorted(params['cmetrics'].values()))
     return params
 
@@ -82,13 +85,13 @@ def train_model(mstr, start, end):
     model_dir = os.path.dirname(path)
     if not os.path.exists(model_dir): os.makedirs(model_dir)
     callbacks = [
-        EarlyStopping(monitor='val_loss', patience=12, verbose=0, mode='min'),
+        EarlyStopping(monitor='val_top_t1p1', patience=12, verbose=0, mode='max'),
         ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
         TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
     model = eval(params['model'])(params)
     print "model summary"
-    model.summary
+    model.summary()
     model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],
               validation_data=(test_x, test_y), callbacks=callbacks)
     save_model(model, './models/' + params['model_name'] + '/model.h5')
@@ -284,6 +287,7 @@ def validate_model2(mstr, days=8):
     sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
 
     print_dist(sortout, params['outdim'] - 1, 20)
+    print_dist_cut(sortout, params['outdim'] - 1, 20)
 
     if not __debug__:
         np.savetxt("./models/" + params['model_name'] + "/val_newlydata_result.txt", sortout, fmt='%f')
@@ -348,12 +352,26 @@ def print_model(mstr):
     plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
 
 
+def get_stats(group):
+    return {'min':group.min(), 'max':group.max(), 'count':group.count(), 'mean':group.mean()}
+
+
 def print_dist(proba, idx, b=10.0):
     # print mean p_change of the proba result
     bins = np.arange(0, 1, 1/float(b))
     labels = bins.searchsorted(proba[:, idx])
-    print pd.Series(proba[:, -1]).groupby(labels).mean()
+    grouped = pd.Series(proba[:, -1]).groupby(labels)
+    print grouped.apply(get_stats).unstack()
     # end print
+
+
+def print_dist_cut(proba, idx, b=10.0):
+    # print mean p_change of the proba result
+    factor = pd.cut(proba[:, idx],b)
+    grouped = pd.Series(proba[:, -1]).groupby(factor)
+    print grouped.apply(get_stats).unstack()
+    # end print
+
 
 def _main_():
     if len(sys.argv) > 4:
