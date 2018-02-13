@@ -30,7 +30,7 @@ ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixe
              'npr', 'holders']
 bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
              'gpr', 'npr']
-tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover']
+tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover','idx_change']
 tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
 st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
@@ -82,7 +82,7 @@ def int2str(ints):
 def minmax_scale(arr):
     mi = np.min(arr)
     mx = np.max(arr)
-    arr = (arr-mi)/(mx-mi+K.epsilon())
+    arr = (arr-mi)/(mx-mi+K.epsilon())+K.epsilon()
     return arr
 
 def pricechange_scale(arr):
@@ -148,6 +148,62 @@ def test_plot(mstr):
     plot_out(d, 2, 3)
 
 
+def refresh_kdata(start='2010-01-01', ktype='5', force=False):
+    # refresh history data using get_k_data
+    # force, force to get_k_data online
+
+    edate = datetime.date.today() - timedelta(days=1)
+    edate = edate.strftime('%Y-%m-%d')
+    path = './data/k'+ktype+'_data/'
+    if not os.path.exists(path+edate):
+        if not os.path.exists(path):
+            os.mkdir(path)
+        os.system('touch ' + path + edate)
+    elif not force:
+        print ("[ refresh_kdata ]... using existing data in "%(path))
+        return
+
+    print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
+
+    index = ts.get_index()
+    basics = ts.get_stock_basics()
+    basics.to_csv('./data/basics.csv')
+
+    symbols = list(basics.index)+list(index.code)
+    for symb in symbols:
+        try:
+            df = ts.get_k_data(symb, start, edate, ktype=ktype)
+        except:
+            print "Exception when processing " + symb
+            traceback.print_exc()
+            continue
+        if df is not None and len(df) > 0:
+            df.to_csv(path + symb + '.csv')
+
+    print "获取指数成分股列表"
+    clist = ts.get_sme_classified()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/sme.csv')
+
+    clist = ts.get_gem_classified()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/gem.csv')
+
+    clist = ts.get_hs300s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/hs300s.csv')
+
+    clist = ts.get_sz50s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/sz50s.csv')
+
+    clist = ts.get_zz500s()
+    if clist is not None and len(clist) > 0:
+        clist.to_csv('./data/zz500s.csv')
+
+    print ("[ end refresh_data ]")
+
+
 def refresh_data(start='2005-01-01', trytimes=10, force=False):
     # refresh history data
     # trytimes, times to try
@@ -179,10 +235,10 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
                 continue
 
             if df is not None and len(df) > 0:
-                df = df[::-1]
                 outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
-                df['p_change'] = df['close'].diff()/df['close'][1:] * 100
+                df['p_change'] = df['close'].diff()/df['close'].shift(1) * 100
                 df['turnover'] = df['volume']/outstanding * 100
+                df = df.fillna(K.epsilon())
                 df.to_csv(data_path + symbs[i] + '.csv')
                 df.to_csv('./data/daily/' + symbs[i] + '.csv')
             else:
@@ -202,7 +258,6 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
     for symb in list(index.code):
         df = ts.get_k_data(symb, start, edate)
         if df is not None and len(df) > 0:
-            df = df[::-1]
             df['p_change'] = df['close'].diff() / df['close'][1:] * 100
             df['turnover'] = minmax_scale(np.array(df['volume']))
             df.to_csv(data_path + symb + '.csv')
@@ -253,8 +308,15 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index='gem'):
     # if symbols is None: return
     # refresh_data()
     basics = get_basic_data()
-    index_list = get_index_list(index)
-    symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
+
+    if index is not None :
+        index_list = get_index_list(index)
+        symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
+        idx_df = pd.read_csv('./data/daily/' + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+        idx_df = idx_df['p_change']
+        idx_df.name = 'idx_change'
+    else:
+        symbols = int2str(list(basics.index))
 
     data_dict = {}
     i = 0
@@ -268,17 +330,121 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index='gem'):
         try:
             df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='date', dtype={'code': str})
             if df is not None:
-                df = df[::-1]
-                data_dict[symbols[i]] = df.loc[start:end][1:]
+                if index is not None: df = df.iloc[:,1:].join(idx_df)
+                data_dict[symbols[i]] = df.loc[start:end]
         except:
             if __debug__:
                 print "Can't get data for symbol:" + str(symbols[i])
             else:
-                pass
-            # traceback.print_exc()
+                traceback.print_exc()
+                print("%i, %i, %i"%(i,symb_num, len(symbols)))
         i += 1
     print ("[ End get history data ]")
     return data_dict
+
+
+def ncreate_dataset(index='gem', days=3, start=None, end=None, ktype='5'):
+    print ("[ create_dataset]... of stock category %s with %i" % (index, days))
+
+    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
+    path = './data/k' + ktype + '_data/'
+    idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+
+    symbols = list(get_index_list(index).code)
+    knum = 240/int(ktype)
+
+    data_all = []
+    df = None
+    ochl = ['open','close','high', 'low']
+    for symb in symbols:
+        try:
+            df = pd.read_csv(path + symb + '.csv', index_col='date', dtype={'code': str})
+            if df is not None:
+                if index is not None: df = df#.join(idx_df)
+
+            # df = df[end:start]
+        except:
+            if __debug__:
+                traceback.print_exc()
+            else:
+                print "Can't get data for symbol:" + str(symb)
+
+        for i in range(2, len(df)/knum - days-1):
+            # if df[i + days - 1, -3] > 9.94:
+            #     continue  # clean data un-operational
+            # preclose = df.ix[(-i-days)*knum-1,'close']
+            nowcell = df.iloc[(-i-days)*knum:(-i)*knum]
+            nxtcell = df.iloc[(-i)*knum:(1-i)*knum]
+            dclose = []
+            for k in range(days+1):
+                dclose.append(df.ix[(k-i-days)*knum-1, 'close'])
+            for k in range(days):
+                nowcell.ix[k*knum:(k+1)*knum, ochl] = (nowcell.ix[k*knum:(k+1)*knum, ochl] - dclose[k]) / dclose[k] * 100
+
+            nowcell.ix[:,'volume'] = preprocessing.scale(nowcell.ix[:,'volume'],copy=False)
+            tsdata = np.array(nowcell.loc[:,['high','low','volume']].values)
+            tsdata = tsdata.reshape(tsdata.shape[0]/(240/int(ktype)),240/int(ktype),tsdata.shape[-1])
+
+            dclose = np.array(dclose) + K.epsilon()
+            max_price = (max(nxtcell.high)-dclose[days-1])/dclose[days]*100
+            min_price = (min(nxtcell.low)-dclose[days-1])/dclose[days]*100
+            lbdata = [str(nxtcell.index[0]).split(' ')[0],nxtcell.code[0],min(nxtcell.low),max(nxtcell.high), min_price,max_price]
+
+            bsdata = None
+            data_cell = [bsdata, tsdata, lbdata]
+            data_all.append(data_cell)
+    print "[ Finish create data set]"
+    return data_all
+
+
+def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
+    """
+    The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
+    and the `lookback`, which is the number of previous time steps to use as input variables
+    to predict the next time period — in this case defaulted to 5.
+    symbs
+    lookback: number of previous time steps as int
+    returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
+    """
+
+    print ("[ create_dataset]... look_back:%s"%lookback)
+
+    sdate = datetime.datetime.strptime(start,'%Y-%m-%d')
+    start = (sdate - timedelta(days=lookback/5*2+lookback)).strftime('%Y-%m-%d')
+
+    data_all = []
+    bsset = get_basic_data()[bfeatures]
+    bsset = bsset[bsset['pb'] > 0]
+    symblist = intstr(list(bsset.index))
+    bsset = preprocessing.scale(bsset)
+    bsset = np.hstack([np.array(symblist).reshape(-1, 1), bsset])
+    stockset = get_history_data(sym_num, totals, start, end)
+    for symb in stockset:
+        if int(symb) not in symblist: continue
+        bsdata = bsset[bsset[:, 0] == int(symb)][0]  # sym,...
+
+        data_stock = stockset[symb][tsfeatures]
+        datelist = mydate(list(data_stock.index))
+        datecol = np.array(intdate(datelist)).reshape(-1, 1)
+        p_change = np.array(data_stock['p_change'].clip(-10, 10))
+        idx_change = np.array(data_stock['idx_change'])
+
+        ndata_stock = np.array(data_stock)
+        for i in range(len(ndata_stock) - lookback - 2):
+            if ndata_stock[i+lookback-1,-3] > 9.94:
+                continue  # clean data un-operational
+            dtcell = ndata_stock[i:(i + lookback)]
+            ohcl = minmax_scale(dtcell[:, 0:4])
+            pchange = p_change[i:(i + lookback)].reshape(-1,1)/10
+            turnover = minmax_scale(dtcell[:,-2]).reshape(-1,1)
+            # 应该直对testcase进行normalization
+            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])+K.epsilon()
+            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback-1:i+lookback+3],sum(idx_change[i+lookback:i+lookback+2]), sum(p_change[i+lookback:i+lookback+2])])
+            data_cell = [bsdata, tsdata, lbdata]
+            data_all.append(data_cell)
+    print "[ Finish create data set]"
+    return data_all
 
 
 def get_newly_data(days=300):
@@ -313,142 +479,6 @@ def get_newly_data(days=300):
         i += 1
     f.flush()
     return f
-
-
-def get_newly_data2(start='2005-01-01', trytimes=10):
-    # refresh history data
-    # trytimes, times to try
-
-    print ("[ get newly data]... from day %s"%(str(start)))
-
-    end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-    today_file = './data/newlydata_' + str(intdate(mydate(end))) + '.h5'
-    if os.path.exists(today_file):
-        f = h5py.File(today_file, 'r')
-        return f
-
-    basics = ts.get_stock_basics()
-    if basics is None or len(basics) == 0:
-        basics = pd.read_csv('./data/basics.csv', index_col=0, dtype={'code': str})
-    else:
-        basics.to_csv('./data/basics.csv')
-    symbols = list(basics.index)
-    f = h5py.File(today_file, 'w')
-    def trymore(symbs, times):
-        failsymbs = []
-        i = 0
-        while i < len(symbs):
-            try:
-                df = ts.get_hist_data(symbs[i], start)[::-1]
-            except:
-                failsymbs.append(symbs[i])
-                traceback.print_exc()
-                i += 1
-                continue
-
-            if df is not None and len(df) > 0:
-                datecol = np.array(intdate(mydate(list(df.index)))).reshape(-1, 1)
-                df['p_change'] = df['p_change'].clip(-10, 10)
-                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
-                df['turnover'] = df['volume']/outstanding * 100
-                f.create_dataset(symbols[i], data=np.hstack([datecol,np.array(df[tsfeatures].astype(float))]))
-            else:
-                failsymbs.append(symbs[i])
-            i += 1
-        if len(failsymbs) > 0:
-            print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
-            if times - 1 > 0:
-                times -= 1
-                trymore(failsymbs, times)
-            else:
-                return
-    trymore(symbols, trytimes)
-    print ("[ end get newlydata ]")
-
-
-def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
-    """
-    The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
-    and the `lookback`, which is the number of previous time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    symbs
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
-    """
-
-    print ("[ create_dataset]... look_back:%s"%lookback)
-
-    sdate = datetime.datetime.strptime(start,'%Y-%m-%d')
-    start = (sdate - timedelta(days=lookback/5*2+lookback)).strftime('%Y-%m-%d')
-
-    data_all = []
-    bsset = get_basic_data()[bfeatures]
-    bsset = bsset[bsset['pb'] > 0]
-    symblist = intstr(list(bsset.index))
-    bsset = preprocessing.scale(bsset)
-    bsset = np.hstack([np.array(symblist).reshape(-1, 1), bsset])
-    stockset = get_history_data(sym_num, totals, start, end)
-    for symb in stockset:
-        if int(symb) not in symblist: continue
-        bsdata = bsset[bsset[:, 0] == int(symb)][0]  # sym,...
-
-        data_stock = stockset[symb][tsfeatures]
-        datelist = mydate(list(data_stock.index))
-        datecol = np.array(intdate(datelist)).reshape(-1, 1)
-        p_change = np.array(data_stock['p_change'].clip(-10, 10))
-
-        ndata_stock = np.array(data_stock)
-        for i in range(len(ndata_stock) - lookback - 2):
-            if ndata_stock[i+lookback-1,-2] > 9.94:
-                continue  # clean data un-operational
-            dtcell = ndata_stock[i:(i + lookback)]
-            ohcl = minmax_scale(dtcell[:, 0:4])
-            pchange = p_change[i:(i + lookback)].reshape(-1,1)/10
-            turnover = minmax_scale(dtcell[:,-1]).reshape(-1,1)
-            # 应该直对testcase进行normalization
-            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])+K.epsilon()
-            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback-1:i+lookback+3], sum(p_change[i+lookback:i+lookback+2])])
-            data_cell = [bsdata, tsdata, lbdata]
-            data_all.append(data_cell)
-    print "[ Finish create data set]"
-    return data_all
-
-
-def create_val_dataset(start, end, lookback, totals=5):
-    """
-    The function takes the `lookback`, which is the number of previous
-    time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([bsdata, tsdata, lbdata])
-    """
-
-    print ("[ create validation dataset ]... ")
-    tsdataset = []
-    lbdataset = []
-    basics = get_basic_data()
-    tsdata_dict = get_newly_data2()
-    start = intdate(mydate(start))
-    end = intdate(mydate(end))
-    for symb in tsdata_dict:
-        if basics.loc[int(symb)]['totals'] > totals: continue
-        data_stock = np.array(tsdata_dict[symb])
-        data_stock = data_stock[np.logical_and(data_stock[:,0]<=end,start<=data_stock[:,0])]
-        for i in range(len(data_stock) - lookback - 2):
-            if data_stock[i+lookback-1,-2] > 9.96:
-                continue  # clean data un-operational
-            ohcl = minmax_scale(data_stock[i:(i + lookback),1:5])
-            pchange = data_stock[i:(i + lookback),-2].reshape(-1,1)/10
-            turnover = minmax_scale(data_stock[i:(i + lookback),-1]).reshape(-1,1)
-            # 应该直对testcase进行normalization
-            tsdata = np.hstack([data_stock[i:i+lookback,0].reshape(-1,1), ohcl, pchange, turnover])
-            lbdata = np.hstack([[int(symb)], data_stock[i+lookback:i+lookback+3,-2], sum(data_stock[i+lookback:i+lookback+3,-2])])
-            tsdataset.append(tsdata)
-            lbdataset.append(lbdata)
-    tsdataset = np.array(tsdataset)
-    lbdataset = np.array(lbdataset)
-    tsdata_dict.close()
-    return tsdataset, lbdataset
 
 
 def create_today_dataset(lookback=5):
@@ -523,7 +553,7 @@ def create_feeddata(dataset):
     """
     print "[ create_feeddata]..."
     rows = [len(dataset)]
-    bsdata = np.zeros(rows + list(dataset[0][0].shape))
+    if len(dataset[0][0])>0: bsdata = np.zeros(rows + list(dataset[0][0].shape))
     tsdata = np.zeros(rows + list(dataset[0][1].shape))
     lbdata_v = np.zeros(rows + list(dataset[0][2].shape))
     i = 0
@@ -595,9 +625,10 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    refresh_data(force=True)
-
-#    get_newly_data2('2016-01-01', 10)
+    # refresh_kdata(force=True)
+    ncreate_dataset(start='2016-01-01')
+#     get_history_data(4000, start='2005-01-01', end=None, index=None)
+# #    get_newly_data2('2016-01-01', 10)
 #    pass
 
     # arr = np.arange(12).reshape(3,4)
