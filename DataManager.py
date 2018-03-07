@@ -168,11 +168,12 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False):
     index = ts.get_index()
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
+    cons = ts.get_apis()
 
     symbols = list(basics.index)+list(index.code)
     for symb in symbols:
         try:
-            df = ts.get_k_data(symb, start, edate, ktype=ktype)
+            df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
         except:
             print "Exception when processing " + symb
             traceback.print_exc()
@@ -343,25 +344,37 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index='gem'):
     return data_dict
 
 
-def ncreate_dataset(index='gem', days=3, start=None, end=None, ktype='5'):
+def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with %i" % (index, days))
+
+    if __debug__ and index is None:
+        index = 'debug'
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
     start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
     path = './data/k' + ktype + '_data/'
-    idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
 
-    symbols = list(get_index_list(index).code)
+    basics = get_basic_data()
+    symbols = int2str(list(basics.index))
+    if not (index is None or index == ''):
+        symbols = list(get_index_list(index).code)
+        # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+
     knum = 240/int(ktype)
 
     data_all = []
-    df = None
-    ochl = ['open','close','high', 'low']
     for symb in symbols:
         try:
-            df = pd.read_csv(path + symb + '.csv', index_col='date', dtype={'code': str})
+            df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
             if df is not None:
+                df = df[end:start]
+                df.fillna(method='bfill')
+                df.fillna(method='ffill')
                 if index is not None: df = df#.join(idx_df)
+
+            dclose = np.array(df.ix[-knum::-knum,'close'])
+            ddate = df.index[-knum::-knum]
+            datall = np.array(df.ix[::-1,['high','low','vol']])
 
             # df = df[end:start]
         except:
@@ -369,30 +382,25 @@ def ncreate_dataset(index='gem', days=3, start=None, end=None, ktype='5'):
                 traceback.print_exc()
             else:
                 print "Can't get data for symbol:" + str(symb)
+            continue
 
-        for i in range(2, len(df)/knum - days-1):
-            # if df[i + days - 1, -3] > 9.94:
-            #     continue  # clean data un-operational
-            # preclose = df.ix[(-i-days)*knum-1,'close']
-            nowcell = df.iloc[(-i-days)*knum:(-i)*knum]
-            nxtcell = df.iloc[(-i)*knum:(1-i)*knum]
-            dclose = []
-            for k in range(days+1):
-                dclose.append(df.ix[(k-i-days)*knum-1, 'close'])
+        for i in range(1, len(df)/knum-days):
+            nowcell = np.array(datall[i*knum:(i+days)*knum])
+            nxtcell = np.array(datall[(i+days)*knum:(i+days+1)*knum])
             for k in range(days):
-                nowcell.ix[k*knum:(k+1)*knum, ochl] = (nowcell.ix[k*knum:(k+1)*knum, ochl] - dclose[k]) / dclose[k] * 100
+                nowcell[k*knum:(k+1)*knum,0:2] = (nowcell[k*knum:(k+1)*knum,0:2] - dclose[i+k-1]) / dclose[i+k-1] * 100
+            try:
+                nowcell[:,2] = preprocessing.scale(nowcell[:,2],copy=False)
+            except:
+                pass
+            nowcell = nowcell.reshape(nowcell.shape[0]/knum,knum,nowcell.shape[-1])
 
-            nowcell.ix[:,'volume'] = preprocessing.scale(nowcell.ix[:,'volume'],copy=False)
-            tsdata = np.array(nowcell.loc[:,['high','low','volume']].values)
-            tsdata = tsdata.reshape(tsdata.shape[0]/(240/int(ktype)),240/int(ktype),tsdata.shape[-1])
+            max_price = (max(nxtcell[:,0])-dclose[i+days-1])/dclose[i+days-1]*100
+            min_price = (min(nxtcell[:,1])-dclose[i+days-1])/dclose[i+days-1]*100
+            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,1]),max(nxtcell[:,0]), min_price,max_price]
 
-            dclose = np.array(dclose) + K.epsilon()
-            max_price = (max(nxtcell.high)-dclose[days-1])/dclose[days]*100
-            min_price = (min(nxtcell.low)-dclose[days-1])/dclose[days]*100
-            lbdata = [str(nxtcell.index[0]).split(' ')[0],nxtcell.code[0],min(nxtcell.low),max(nxtcell.high), min_price,max_price]
-
-            bsdata = None
-            data_cell = [bsdata, tsdata, lbdata]
+            bsdata = np.array(intdate(mydate(ddate[i+days].split(' ')[0])))
+            data_cell = [bsdata, nowcell, np.array(lbdata)]
             data_all.append(data_cell)
     print "[ Finish create data set]"
     return data_all
@@ -553,7 +561,10 @@ def create_feeddata(dataset):
     """
     print "[ create_feeddata]..."
     rows = [len(dataset)]
-    if len(dataset[0][0])>0: bsdata = np.zeros(rows + list(dataset[0][0].shape))
+    if dataset[0][0] is not None:
+        bsdata = np.zeros(rows + list(dataset[0][0].shape))
+    else:
+        bsdata = np.zeros(rows)
     tsdata = np.zeros(rows + list(dataset[0][1].shape))
     lbdata_v = np.zeros(rows + list(dataset[0][2].shape))
     i = 0
@@ -562,6 +573,7 @@ def create_feeddata(dataset):
         tsdata[i] = dataset[i][1]
         lbdata_v[i] = dataset[i][2]
         i += 1
+
     print "[ end create_feeddata]..."
     return bsdata, tsdata, lbdata_v
 
@@ -625,8 +637,8 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    # refresh_kdata(force=True)
-    ncreate_dataset(start='2016-01-01')
+    refresh_kdata(force=True)
+    # ncreate_dataset(start='2016-01-01')
 #     get_history_data(4000, start='2005-01-01', end=None, index=None)
 # #    get_newly_data2('2016-01-01', 10)
 #    pass

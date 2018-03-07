@@ -6,7 +6,7 @@ import numpy as np
 from DataManager import *
 import keras.backend as K
 from keras.regularizers import l1, l1_l2, l2
-from keras.layers import Dense, Activation, GRU, Dropout, SimpleRNN, LSTM
+from keras.layers import Dense, Activation, GRU, Dropout, Conv2D, LSTM,Flatten
 # from keras.metrics import
 from keras.models import Sequential, save_model
 from keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -100,6 +100,7 @@ def tpfn_metrics(y_true, y_pred):
         'false_positive': fp,
     }
 
+
 def nbuild_model(params):
     """
     The function builds a keras Sequential model
@@ -109,24 +110,22 @@ def nbuild_model(params):
     """
 
     print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
+    channels = params['indim']
     output_dim = params['outdim']
-    knum = 240/int(params['ktype'])
+    cols = 240/int(params['ktype'])
+    rows = params['lookback']
 
     model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, knum ,input_dim),
-                  stateful=True,
-                  return_sequences=False))
+    model.add(Conv2D(16,(3,3), input_shape=(rows, cols, channels)))
+    model.add(Activation('tanh'))
+    # model.add(Conv2D(16,(3,3)))
     model.add(Dropout(0.5))
+    model.add(Flatten())
     model.add(Dense(16, activation='tanh'))
     model.add(Dropout(0.5))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+    model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=params['metrics'])
     print "Finish building model"
     return model
