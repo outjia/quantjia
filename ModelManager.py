@@ -7,9 +7,8 @@ from DataManager import *
 import keras.backend as K
 from keras.regularizers import l1, l1_l2, l2
 from keras.layers import Dense, Activation, GRU, Dropout, Conv2D, LSTM,Flatten
-# from keras.metrics import
 from keras.models import Sequential, save_model
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.optimizers import SGD
 
 signature = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
 
@@ -108,7 +107,7 @@ def nbuild_model(params):
     :param batch_size: batch_size as int, defaults to 1
     :return: keras Sequential model
     """
-
+    K.set_image_dim_ordering('th')
     print "[ build_model ]... with params" + str(params)
     channels = params['indim']
     output_dim = params['outdim']
@@ -116,15 +115,17 @@ def nbuild_model(params):
     rows = params['lookback']
 
     model = Sequential()
-    model.add(Conv2D(16,(3,3), input_shape=(rows, cols, channels)))
+    model.add(Conv2D(32,(3,3), input_shape=(rows, cols, channels),data_format = 'channels_last'))
     model.add(Activation('tanh'))
-    # model.add(Conv2D(16,(3,3)))
+    model.add(Dropout(0.5))
+    model.add(Conv2D(4,(3,3),data_format='channels_last',padding="same"))
     model.add(Dropout(0.5))
     model.add(Flatten())
     model.add(Dense(16, activation='tanh'))
     model.add(Dropout(0.5))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
+    # sdg = SGD(lr=0.01, decay=1e-6, momentum=0.8, nesterov=True)
     model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=params['metrics'])
     print "Finish building model"

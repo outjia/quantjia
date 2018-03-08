@@ -61,19 +61,22 @@ def parse_params(mstr):
     return params
 
 
-def ntrain_model(mstr, start, end):
+def ntrain_model(mstr, start, mid, end):
     params = parse_params(mstr)
     print ("[ train model ]... " + mstr)
 
-    dataset = ncreate_dataset(index=None,days=params['lookback'], start=start, end=end, ktype=params['ktype'])
-    train, test = split_dataset(dataset, 0.75, params['batch_size'])
+    train = ncreate_dataset(index=None,days=params['lookback'], start=start, end=mid, ktype=params['ktype'])
+    test = ncreate_dataset(index=None,days=params['lookback'], start=mid, end=end, ktype=params['ktype'])
+
+    # dataset = ncreate_dataset(index=None,days=params['lookback'], start=start, end=end, ktype=params['ktype'])
+    # train, test = split_dataset(dataset, 0.75, params['batch_size'])
 
     bstrain, tstrain, lbtrain_v = create_feeddata(train)
     bstest, tstest, lbtest_v = create_feeddata(test)
 
     train_x = tstrain
     train_y = eval(params['catf'])(lbtrain_v[:, -1])
-    # train_y, train_x, non = balance_data(train_y, train_x)
+    train_y, train_x, non = balance_data(train_y, train_x)
     sz = len(train_y)/params['batch_size'] * params['batch_size']
     train_x = train_x[:sz]
     train_y = train_y[:sz]
@@ -87,7 +90,7 @@ def ntrain_model(mstr, start, end):
     model_dir = os.path.dirname(path)
     if not os.path.exists(model_dir): os.makedirs(model_dir)
     callbacks = [
-        EarlyStopping(monitor='val_categorical_accuracy', patience=12, verbose=0, mode='max'),
+        EarlyStopping(monitor='val_loss', patience=12, verbose=0, mode='min'),
         ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
         TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
@@ -102,7 +105,7 @@ def ntrain_model(mstr, start, end):
     out = np.hstack([proba, test_y_v])
     sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
 
-    print_dist(sortout, params['outdim'] - 1, 20)
+    print_dist(sortout, params['outdim'] - 1, 10)
 
     if not __debug__:
         np.savetxt("./models/" + params['model_name'] + "/val_result.txt", sortout, fmt='%f')
@@ -113,7 +116,7 @@ def ntrain_model(mstr, start, end):
 def nvalid_model(mstr, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None):
     print ("[ valid model: %s ]... with data from %s to %s"%(mstr,start, end))
     params = parse_params(mstr)
-    model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=params['cmetrics'])
+    model = load_model('./models/'+params['model_name']+'/best_model.h5',custom_objects=params['cmetrics'])
     print "model summary"
     model.summary()
 
@@ -137,209 +140,6 @@ def nvalid_model(mstr, start=(datetime.date.today() - timedelta(days=60)).strfti
         np.savetxt("./models/" + params['model_name'] + "/val_newlydata_result.txt", sortout, fmt='%f')
     else:
         print sortout[0:200, :]
-
-    print ("[ End validate model: %s ]... " % (mstr))
-    return sortout
-
-def train_model(mstr, start, end):
-    params = parse_params(mstr)
-    print ("[ train model ]... " + mstr)
-
-    dataset = create_dataset(params['stocks'], params['lookback'], start, '2017-06-01', params['totals'])
-    train, test = split_dataset(dataset, 0.99, params['batch_size'])
-    test = create_dataset(params['stocks'], params['lookback'], '2017-06-01', end, params['totals'])
-    test = test[:len(test)/params['batch_size']*params['batch_size']]
-
-    bstrain, tstrain, lbtrain_v = create_feeddata(train)
-    bstest, tstest, lbtest_v = create_feeddata(test)
-
-    train_x = tstrain[:,:,1:]
-    train_y = eval(params['catf'])(lbtrain_v[:, -1])
-    train_y, train_x, non = balance_data(train_y, train_x)
-    sz = len(train_y)/params['batch_size'] * params['batch_size']
-    train_x = train_x[:sz]
-    train_y = train_y[:sz]
-
-
-    test_x = tstest[:,:,1:]
-    test_y = eval(params['catf'])(lbtest_v[:,-1])
-    test_y_v = lbtest_v
-
-    params['indim'] = train_x.shape[train_x.ndim - 1]
-    path = 'models/' + params['model_name']
-    model_dir = os.path.dirname(path)
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
-    callbacks = [
-        EarlyStopping(monitor='val_top_t1p1', patience=12, verbose=0, mode='max'),
-        ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
-        TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
-    ]
-    model = eval(params['model'])(params)
-    print "model summary"
-    model.summary()
-    model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],
-              validation_data=(test_x, test_y), callbacks=callbacks)
-    save_model(model, './models/' + params['model_name'] + '/model.h5')
-
-    proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-
-    print_dist(sortout, params['outdim'] - 1, 20)
-
-    if not __debug__:
-        np.savetxt("./models/" + params['model_name'] + "/val_result.txt", sortout, fmt='%f')
-    else:
-        print sortout[0:200, :]
-    print "[ End train model ]"
-    return sortout
-
-
-def train_model2(mstr, days=None):
-    params = parse_params(mstr)
-    print ("[ train model ]... " + mstr)
-    if days is not None:
-        start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-    else:
-        start = '1980-10-16'
-    end = (datetime.date.today()).strftime('%Y-%m-%d')
-
-    dataset = create_dataset(params['stocks'], params['lookback'], start, end, params['totals'])
-    train, test = split_dataset(dataset, 0.75, params['batch_size'])
-    bstrain, tstrain, lbtrain_v = create_feeddata(train)
-    bstest, tstest, lbtest_v = create_feeddata(test)
-    train_x1 = tstrain[:,:,1:]
-    train_x2 = bstrain[:,1:]
-    train_y = eval(params['catf'])(lbtrain_v[:, -1])
-    train_y, train_x1, train_x2 = balance_data(train_y, train_x1, train_x2)
-    sz = len(train_y)/params['batch_size'] * params['batch_size']
-    train_x1 = train_x1[:sz]
-    train_x2 = train_x2[:sz]
-    train_y = train_y[:sz]
-
-    test_x1 = tstest[:,:,1:]
-    test_x2 = bstest[:, 1:]
-    test_y = eval(params['catf'])(lbtest_v[:,-1])
-    test_y_v = lbtest_v
-
-    params['indim1'] = train_x1.shape[-1]
-    params['indim2'] = train_x2.shape[-1]
-    path = 'models/' + params['model_name']
-    model_dir = os.path.dirname(path)
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
-    callbacks = [
-        EarlyStopping(monitor='val_loss', patience=20, verbose=0, mode='min'),
-        ModelCheckpoint(path+'/checkpoint_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
-        TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
-    ]
-    model = eval(params['model'])(params)
-    model.fit([train_x1, train_x2], train_y, batch_size=params['batch_size'], nb_epoch=params['epoch'],
-              validation_data=([test_x1,test_x2], test_y), callbacks=callbacks)
-    save_model(model, './models/' + params['model_name'] + '/model.h5')
-
-    proba = model.predict_proba([test_x1,test_x2], verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-
-    if not __debug__:
-        np.savetxt("./models/" + params['model_name'] + "/val_result.txt", sortout, fmt='%f')
-    else:
-        print sortout[0:200, :]
-    print "[ End train model ]"
-    return sortout
-
-
-def train_model5(mstr, start, end):
-    params = parse_params(mstr)
-    print ("[ train model ]... " + mstr)
-
-    # dataset = create_dataset(params['stocks'], params['lookback'], start, end, params['totals'])
-    # train, test = split_dataset(dataset, 0.75, params['batch_size'])
-    train = create_dataset(params['stocks'], params['lookback'], start, '2016-06-01', params['totals'])
-    test = create_dataset(params['stocks'], params['lookback'], '2016-06-02', end, params['totals'])
-    test = test[0:len(test)/params['batch_size']*params['batch_size']]
-
-
-    bstrain, tstrain, lbtrain_v = create_feeddata(train)
-    bstest, tstest, lbtest_v = create_feeddata(test)
-    train_x = tstrain[:,:,1:]
-    train_y = lbtrain_v[:, -1]/30
-    # train_y, train_x, non = balance_data(train_y, train_x)
-    sz = len(train_y)/params['batch_size'] * params['batch_size']
-    train_x = train_x[:sz]
-    train_y = train_y[:sz]
-
-    test_x = tstest[:,:,1:]
-    test_y = lbtest_v[:,-1]/30
-    test_y_v = lbtest_v
-
-    params['indim'] = train_x.shape[train_x.ndim - 1]
-    path = 'models/' + params['model_name']
-    model_dir = os.path.dirname(path)
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
-    callbacks = [
-        EarlyStopping(monitor='val_loss', patience=5, verbose=0, mode='min'),
-        ModelCheckpoint(path+'/best_model.h5', monitor='val_acc', save_best_only=True, verbose=0, mode='max'),
-        TensorBoard(log_dir=path+'/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
-    ]
-    model = eval(params['model'])(params)
-    print "model summary"
-    model.summary
-    model.fit(train_x, train_y, batch_size=params['batch_size'], nb_epoch=params['epoch'],
-              validation_data=(test_x, test_y), callbacks=callbacks)
-    save_model(model, './models/' + params['model_name'] + '/model.h5')
-
-    proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-
-    if not __debug__:
-        np.savetxt("./models/" + params['model_name'] + "/val_result.txt", sortout, fmt='%f')
-    else:
-        print sortout[0:200, :]
-    print "[ End train model ]"
-    return sortout
-
-
-def validate_model2(mstr, days=8):
-    print ("[ valid model: %s ]... with latest %s days data"%(mstr,str(days)))
-    params = parse_params(mstr)
-    cust_objs = params['cmetrics']
-    model = load_model('./models/'+params['model_name']+'/model.h5',custom_objects=cust_objs)
-    print "model summary"
-    model.summary()
-
-    start = (datetime.date.today() - timedelta(int(days))).strftime('%Y-%m-%d')
-    valset = create_dataset(3100, params['lookback'], start, None, params['totals'])
-    bsvalset, tsvalset, lbvalset_v = create_feeddata(valset)
-
-    test_x = tsvalset[:,:,1:]
-    test_x2 = bsvalset[:,1:]
-    test_y_v = lbvalset_v
-    test_x = test_x[:len(test_x) / params['batch_size'] * params['batch_size']]
-    test_x2 = test_x2[:len(test_x2) / params['batch_size'] * params['batch_size']]
-    test_y_v = test_y_v[:len(test_y_v) / params['batch_size'] * params['batch_size']]
-
-    proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-
-    print_dist(sortout, params['outdim'] - 1, 20)
-    print_dist_cut(sortout, params['outdim'] - 1, 20)
-
-    if not __debug__:
-        np.savetxt("./models/" + params['model_name'] + "/val_newlydata_result.txt", sortout, fmt='%f')
-    else:
-        print sortout[0:200, :]
-
-    if os.path.exists('./models/' + params['model_name'] + '/checkpoint_model.h5'):
-        model_bk = load_model('./models/' + params['model_name'] + '/checkpoint_model.h5', custom_objects=cust_objs)
-        print "best model summary"
-        model_bk.summary()
-        proba_bk = model_bk.predict_proba([test_x,test_x2], verbose=0, batch_size=params['batch_size'])
-        out_bk = np.hstack([proba_bk, test_y_v])
-        sortout_bk = out_bk[(-out_bk[:, proba_bk.shape[proba_bk.ndim - 1] - 1]).argsort(), :]
-        np.savetxt("./models/" + params['model_name'] + "/val_checkpoint_newlydata_result.txt", sortout_bk, fmt='%f')
 
     print ("[ End validate model: %s ]... " % (mstr))
     return sortout
@@ -412,6 +212,8 @@ def print_dist_cut(proba, idx, b=10.0):
 
 
 def _main_():
+    if len(sys.argv) > 5:
+        eval(sys.argv[1])(sys.argv[2], sys.argv[3], sys.argv[4],sys.argv[5])
     if len(sys.argv) > 4:
         eval(sys.argv[1])(sys.argv[2], sys.argv[3], sys.argv[4])
     elif len(sys.argv) > 3:

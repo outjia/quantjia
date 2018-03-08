@@ -58,6 +58,19 @@ def intdate(dt):
         return dt.year*10000+dt.month*100+dt.day
 
 
+def intdate2str(dt):
+    if isinstance(dt, list) or isinstance(dt, np.ndarray):
+        strdate = []
+        for d in dt:
+            strdate.append(intdate2str(d))
+        return strdate
+    else:
+        year = dt/10000
+        month = (dt - year*10000)/100
+        day = dt - year*10000 - month*100
+        return str(year)+'-'+str(month)+'-'+str(day)
+
+
 def intstr(ints):
     if isinstance(ints, list) or isinstance(ints, np.ndarray):
         intarr = []
@@ -92,7 +105,7 @@ def pricechange_scale(arr):
 
 def catf2(data):
     data_y = data.copy()
-    data_y[data_y < 0.5] = 31
+    data_y[data_y < 1] = 31
     data_y[data_y < 31] = 32
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
@@ -109,10 +122,10 @@ def catf3(data):
 
 def catf31(data):
     data_y = data.copy()
-    data_y[data_y < 0.5] = 31
-    data_y[data_y < 3] = 32
-    data_y[data_y < 30] = 33
-    data_y -= 31
+    data_y[data_y < 1] = 51
+    data_y[data_y < 3] = 52
+    data_y[data_y < 50] = 53
+    data_y -= 51
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
 
@@ -148,7 +161,7 @@ def test_plot(mstr):
     plot_out(d, 2, 3)
 
 
-def refresh_kdata(start='2010-01-01', ktype='5', force=False):
+def refresh_kdata(start='2010-01-01', ktype='5', force=False, inc=True):
     # refresh history data using get_k_data
     # force, force to get_k_data online
 
@@ -165,21 +178,29 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False):
 
     print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
 
-    index = ts.get_index()
-    basics = ts.get_stock_basics()
-    basics.to_csv('./data/basics.csv')
-    cons = ts.get_apis()
+    if inc and os.path.exists(path+'fails.csv'):
+        symbols = pd.read_csv(path+'fails.csv',dtype='str')
+    else:
+        index = ts.get_index()
+        basics = ts.get_stock_basics()
+        basics.to_csv('./data/basics.csv')
+        symbols = list(basics.index) + list(index.code)
 
-    symbols = list(basics.index)+list(index.code)
+    cons = ts.get_apis()
+    failsymbs = []
     for symb in symbols:
         try:
             df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
         except:
             print "Exception when processing " + symb
+            failsymbs.append(symb)
             traceback.print_exc()
             continue
         if df is not None and len(df) > 0:
             df.to_csv(path + symb + '.csv')
+    pd.DataFrame(failsymbs).to_csv(path+'fails.csv')
+    print "Failed Symbols: "
+    print failsymbs
 
     print "获取指数成分股列表"
     clist = ts.get_sme_classified()
@@ -385,19 +406,33 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             continue
 
         for i in range(1, len(df)/knum-days):
+
             nowcell = np.array(datall[i*knum:(i+days)*knum])
             nxtcell = np.array(datall[(i+days)*knum:(i+days+1)*knum])
             for k in range(days):
-                nowcell[k*knum:(k+1)*knum,0:2] = (nowcell[k*knum:(k+1)*knum,0:2] - dclose[i+k-1]) / dclose[i+k-1] * 100
+                nowcell[k*knum:(k+1)*knum,0:2] = (nowcell[k*knum:(k+1)*knum,0:2] - dclose[i+k-1]) / dclose[i+k-1] * 10
+
+            # 异常数据，跳过
+            if abs(nowcell[:,0:2].any()) > 11:continue
+
+            # 当天涨停，删除此类案例
+            if nowcell[-1,1] > 0.98: continue
+
             try:
                 nowcell[:,2] = preprocessing.scale(nowcell[:,2],copy=False)
             except:
                 pass
             nowcell = nowcell.reshape(nowcell.shape[0]/knum,knum,nowcell.shape[-1])
 
-            max_price = (max(nxtcell[:,0])-dclose[i+days-1])/dclose[i+days-1]*100
-            min_price = (min(nxtcell[:,1])-dclose[i+days-1])/dclose[i+days-1]*100
+            max_price = min((max(nxtcell[:,0])-dclose[i+days-1])/dclose[i+days-1]*100, 20)
+            min_price = max((min(nxtcell[:,1])-dclose[i+days-1])/dclose[i+days-1]*100,-20)
             lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,1]),max(nxtcell[:,0]), min_price,max_price]
+
+            if abs(max_price)>11 or abs(min_price) > 11:
+                print '*' * 50
+                print lbdata
+                print '*' * 50
+                continue
 
             bsdata = np.array(intdate(mydate(ddate[i+days].split(' ')[0])))
             data_cell = [bsdata, nowcell, np.array(lbdata)]
