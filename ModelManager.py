@@ -6,7 +6,7 @@ import numpy as np
 from DataManager import *
 import keras.backend as K
 from keras.regularizers import l1, l1_l2, l2
-from keras.layers import Dense, Activation, GRU, Dropout, Conv2D, LSTM,Flatten
+from keras.layers import Dense, Activation, GRU, Dropout, Conv2D, LSTM,Flatten,MaxPool2D,AveragePooling2D
 from keras.models import Sequential, save_model
 from keras.optimizers import SGD
 
@@ -115,13 +115,14 @@ def nbuild_model(params):
     rows = params['lookback']
 
     model = Sequential()
-    model.add(Conv2D(32,(3,3), input_shape=(rows, cols, channels),data_format = 'channels_last'))
-    model.add(Activation('tanh'))
+    model.add(Conv2D(8,(3,5), strides=(1, 1),input_shape=(rows, cols, channels),data_format = 'channels_last'))
+    # model.add(AveragePooling2D(pool_size=2, strides=2))
     model.add(Dropout(0.5))
-    model.add(Conv2D(4,(3,3),data_format='channels_last',padding="same"))
-    model.add(Dropout(0.5))
+    model.add(Activation('relu'))
+    # model.add(Conv2D(8,(3,3),data_format='channels_last',padding="same"))
+    # model.add(Dropout(0.5))
     model.add(Flatten())
-    model.add(Dense(16, activation='tanh'))
+    model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
@@ -147,7 +148,7 @@ def build_model(params):
     output_dim = params['outdim']
 
     model = Sequential()
-    model.add(GRU(64,
+    model.add(GRU(32,
                   activation='tanh',
                   batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,

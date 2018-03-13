@@ -35,6 +35,8 @@ tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
 st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
 
+cons = ts.get_apis()
+
 
 def mydate(datestr):
     if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
@@ -105,7 +107,7 @@ def pricechange_scale(arr):
 
 def catf2(data):
     data_y = data.copy()
-    data_y[data_y < 1] = 31
+    data_y[data_y < 0.1] = 31
     data_y[data_y < 31] = 32
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
@@ -120,14 +122,16 @@ def catf3(data):
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
 
+
 def catf31(data):
     data_y = data.copy()
-    data_y[data_y < 1] = 51
-    data_y[data_y < 3] = 52
+    data_y[data_y < 0.5] = 51
+    data_y[data_y < 2] = 52
     data_y[data_y < 50] = 53
     data_y -= 51
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
+
 
 def catf4(data):
     data_y = data.copy()
@@ -137,6 +141,16 @@ def catf4(data):
     data_y[data_y <= 10.5] = 14
     data_y -= 11
     data_y = np_utils.to_categorical(data_y, 4)
+    return data_y
+
+
+def catf21(data):
+    # 对low进行预测
+    data_y = data.copy()
+    data_y[data_y <= 0] = 31
+    data_y[data_y < 31] = 32
+    data_y -= 31
+    data_y = np_utils.to_categorical(data_y, 2)
     return data_y
 
 
@@ -161,7 +175,7 @@ def test_plot(mstr):
     plot_out(d, 2, 3)
 
 
-def refresh_kdata(start='2010-01-01', ktype='5', force=False, inc=True):
+def refresh_kdata(start='2015-01-01', ktype='5', force=False):
     # refresh history data using get_k_data
     # force, force to get_k_data online
 
@@ -178,17 +192,17 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False, inc=True):
 
     print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
 
-    if inc and os.path.exists(path+'fails.csv'):
-        symbols = pd.read_csv(path+'fails.csv',dtype='str')
-    else:
-        index = ts.get_index()
-        basics = ts.get_stock_basics()
-        basics.to_csv('./data/basics.csv')
-        symbols = list(basics.index) + list(index.code)
+    index = ts.get_index()
+    basics = ts.get_stock_basics()
+    basics.to_csv('./data/basics.csv')
+    symbols = list(basics.index) + list(index.code)
 
-    cons = ts.get_apis()
     failsymbs = []
     for symb in symbols:
+        file = path + symb + '.csv'
+        if os.path.exists(file):
+            continue
+
         try:
             df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
         except:
@@ -197,94 +211,9 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False, inc=True):
             traceback.print_exc()
             continue
         if df is not None and len(df) > 0:
-            df.to_csv(path + symb + '.csv')
-    pd.DataFrame(failsymbs).to_csv(path+'fails.csv')
+            df.to_csv(file)
     print "Failed Symbols: "
     print failsymbs
-
-    print "获取指数成分股列表"
-    clist = ts.get_sme_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sme.csv')
-
-    clist = ts.get_gem_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/gem.csv')
-
-    clist = ts.get_hs300s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/hs300s.csv')
-
-    clist = ts.get_sz50s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sz50s.csv')
-
-    clist = ts.get_zz500s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/zz500s.csv')
-
-    print ("[ end refresh_data ]")
-
-
-def refresh_data(start='2005-01-01', trytimes=10, force=False):
-    # refresh history data
-    # trytimes, times to try
-
-    edate = datetime.date.today() - timedelta(days=1)
-    edate = edate.strftime('%Y-%m-%d')
-    data_path = './data/' + edate + '/'
-    if not os.path.exists(data_path):
-        os.makedirs(data_path)
-    elif not force:
-        return
-    print ("[ refresh_data ]... start date:%s" % (start))
-    basics = ts.get_stock_basics()
-    basics.to_csv('./data/basics.csv')
-
-    symbols = list(basics.index)
-
-    def trymore(symbs, times):
-        failsymbs = []
-        i = 0
-        while i < len(symbs):
-            try:
-                df = ts.get_k_data(symbs[i], start,edate)
-            except:
-                failsymbs.append(symbs[i])
-                print "Exception when processing " + symbs[i]
-                traceback.print_exc()
-                i += 1
-                continue
-
-            if df is not None and len(df) > 0:
-                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
-                df['p_change'] = df['close'].diff()/df['close'].shift(1) * 100
-                df['turnover'] = df['volume']/outstanding * 100
-                df = df.fillna(K.epsilon())
-                df.to_csv(data_path + symbs[i] + '.csv')
-                df.to_csv('./data/daily/' + symbs[i] + '.csv')
-            else:
-                failsymbs.append(symbs[i])
-            i += 1
-        if len(failsymbs) > 0:
-            print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
-            if times - 1 > 0:
-                times -= 1
-                trymore(failsymbs, times)
-            else:
-                return
-    trymore(symbols, trytimes)
-
-    # 增加指数K线数据
-    index = ts.get_index()
-    for symb in list(index.code):
-        df = ts.get_k_data(symb, start, edate)
-        if df is not None and len(df) > 0:
-            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
-            df['turnover'] = minmax_scale(np.array(df['volume']))
-            df.to_csv(data_path + symb + '.csv')
-            df.to_csv('./data/daily/' + symb + '.csv')
-
 
     print "获取指数成分股列表"
     clist = ts.get_sme_classified()
@@ -325,50 +254,10 @@ def get_index_list(m):
     return pd.read_csv(listfile, index_col=0, dtype={'code': str})
 
 
-def get_history_data(symb_num, totals=None, start=None, end=None, index='gem'):
-    print ("[ get history data ]... for %i symbols" % (symb_num))
-    # if symbols is None: return
-    # refresh_data()
-    basics = get_basic_data()
-
-    if index is not None :
-        index_list = get_index_list(index)
-        symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
-        idx_df = pd.read_csv('./data/daily/' + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
-        idx_df = idx_df['p_change']
-        idx_df.name = 'idx_change'
-    else:
-        symbols = int2str(list(basics.index))
-
-    data_dict = {}
-    i = 0
-    while i < len(symbols) and i < symb_num:
-        # 小市值股票
-        # if totals is not None and basics.iloc[i]['totals'] > totals: i += 1; continue
-
-        # 创业板, 使用index代替硬编码
-        # if not symbols[i].startswith('300'): i +=1; continue
-
-        try:
-            df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='date', dtype={'code': str})
-            if df is not None:
-                if index is not None: df = df.iloc[:,1:].join(idx_df)
-                data_dict[symbols[i]] = df.loc[start:end]
-        except:
-            if __debug__:
-                print "Can't get data for symbol:" + str(symbols[i])
-            else:
-                traceback.print_exc()
-                print("%i, %i, %i"%(i,symb_num, len(symbols)))
-        i += 1
-    print ("[ End get history data ]")
-    return data_dict
-
-
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with %i" % (index, days))
 
-    if __debug__ and index is None:
+    if __debug__:
         index = 'debug'
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
@@ -395,131 +284,84 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
 
             dclose = np.array(df.ix[-knum::-knum,'close'])
             ddate = df.index[-knum::-knum]
-            datall = np.array(df.ix[::-1,['high','low','vol']])
+            datall = np.array(df.ix[::-1,['open','close','high','low','vol']])
 
             # df = df[end:start]
         except:
             if __debug__:
                 traceback.print_exc()
             else:
-                print "Can't get data for symbol:" + str(symb)
+                # print "Can't get data for symbol:" + str(symb)
+                pass
             continue
 
         for i in range(1, len(df)/knum-days):
-
             nowcell = np.array(datall[i*knum:(i+days)*knum])
             nxtcell = np.array(datall[(i+days)*knum:(i+days+1)*knum])
             for k in range(days):
-                nowcell[k*knum:(k+1)*knum,0:2] = (nowcell[k*knum:(k+1)*knum,0:2] - dclose[i+k-1]) / dclose[i+k-1] * 10
+                nowcell[k*knum:(k+1)*knum,0:4] = (nowcell[k*knum:(k+1)*knum,0:4] - dclose[i+k-1]) / dclose[i+k-1] * 10 + K.epsilon()
 
             # 异常数据，跳过
-            if abs(nowcell[:,0:2].any()) > 11:continue
-
+            if abs(nowcell[:,0:4].any()) > 11:continue
             # 当天涨停，删除此类案例
             if nowcell[-1,1] > 0.98: continue
 
+            pchange_pre = float(nowcell[-1,1]*10)
+
             try:
-                nowcell[:,2] = preprocessing.scale(nowcell[:,2],copy=False)
+                nowcell[:,4] = preprocessing.scale(nowcell[:,4],copy=False)
             except:
                 pass
             nowcell = nowcell.reshape(nowcell.shape[0]/knum,knum,nowcell.shape[-1])
 
-            max_price = min((max(nxtcell[:,0])-dclose[i+days-1])/dclose[i+days-1]*100, 20)
-            min_price = max((min(nxtcell[:,1])-dclose[i+days-1])/dclose[i+days-1]*100,-20)
-            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,1]),max(nxtcell[:,0]), min_price,max_price]
+            max_price = min((max(nxtcell[:,2])-dclose[i+days-1])/dclose[i+days-1]*100, 20)
+            min_price = max((min(nxtcell[:,3])-dclose[i+days-1])/dclose[i+days-1]*100,-20)
+            cls_price = (nxtcell[-1,1]-dclose[i+days-1])/dclose[i+days-1] * 100
+            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,3]),max(nxtcell[:,2]),pchange_pre, cls_price,min_price,max_price]
 
             if abs(max_price)>11 or abs(min_price) > 11:
-                print '*' * 50
-                print lbdata
-                print '*' * 50
+                # print '*' * 50
+                # print lbdata
+                # print '*' * 50
                 continue
 
             bsdata = np.array(intdate(mydate(ddate[i+days].split(' ')[0])))
-            data_cell = [bsdata, nowcell, np.array(lbdata)]
+            data_cell = [bsdata, nowcell[:,:,-3:], np.array(lbdata)]
             data_all.append(data_cell)
     print "[ Finish create data set]"
     return data_all
 
 
-def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
-    """
-    The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
-    and the `lookback`, which is the number of previous time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    symbs
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
-    """
-
-    print ("[ create_dataset]... look_back:%s"%lookback)
-
-    sdate = datetime.datetime.strptime(start,'%Y-%m-%d')
-    start = (sdate - timedelta(days=lookback/5*2+lookback)).strftime('%Y-%m-%d')
-
-    data_all = []
-    bsset = get_basic_data()[bfeatures]
-    bsset = bsset[bsset['pb'] > 0]
-    symblist = intstr(list(bsset.index))
-    bsset = preprocessing.scale(bsset)
-    bsset = np.hstack([np.array(symblist).reshape(-1, 1), bsset])
-    stockset = get_history_data(sym_num, totals, start, end)
-    for symb in stockset:
-        if int(symb) not in symblist: continue
-        bsdata = bsset[bsset[:, 0] == int(symb)][0]  # sym,...
-
-        data_stock = stockset[symb][tsfeatures]
-        datelist = mydate(list(data_stock.index))
-        datecol = np.array(intdate(datelist)).reshape(-1, 1)
-        p_change = np.array(data_stock['p_change'].clip(-10, 10))
-        idx_change = np.array(data_stock['idx_change'])
-
-        ndata_stock = np.array(data_stock)
-        for i in range(len(ndata_stock) - lookback - 2):
-            if ndata_stock[i+lookback-1,-3] > 9.94:
-                continue  # clean data un-operational
-            dtcell = ndata_stock[i:(i + lookback)]
-            ohcl = minmax_scale(dtcell[:, 0:4])
-            pchange = p_change[i:(i + lookback)].reshape(-1,1)/10
-            turnover = minmax_scale(dtcell[:,-2]).reshape(-1,1)
-            # 应该直对testcase进行normalization
-            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])+K.epsilon()
-            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback-1:i+lookback+3],sum(idx_change[i+lookback:i+lookback+2]), sum(p_change[i+lookback:i+lookback+2])])
-            data_cell = [bsdata, tsdata, lbdata]
-            data_all.append(data_cell)
-    print "[ Finish create data set]"
-    return data_all
-
-
-def get_newly_data(days=300):
-    print ("[ get newly data]... for %s days"%(str(days)))
+def get_newly_kdata(ktype='5',days=30, inc=True):
+    print ("[ get newly kdata]... for %s days"%(str(days)))
 
     start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
     end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-    today_file = './data/' + end + '/newlydata.h5'
+    today_file = './data/' + end + '/newlykdata.h5'
     if os.path.exists(today_file):
         f = h5py.File(today_file, 'r')
         return f
-
-    basics = ts.get_stock_basics()
-    symbols = int2str(list(basics.index))
     f = h5py.File(today_file, 'w')
-    i = 0
-    while i < len(symbols):
-        try:
-            df = ts.get_h_data(symbols[i], start, end)
-        except:
-            traceback.print_exc()
-            i += 1
-            continue
 
+    failsymbs = []
+    if inc and os.path.exists('./data/' + end + '/fails.csv'):
+        symbols = pd.read_csv('./data/' + end + '/fails.csv',dtype='str')
+    else:
+        index = ts.get_index()
+        basics = ts.get_stock_basics()
+        basics.to_csv('./data/basics.csv')
+        symbols = list(basics.index) + list(index.code)
+
+    for symb in symbols:
+        try:
+            df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
+        except:
+            print "Exception when processing " + symb
+            failsymbs.append(symb)
+            traceback.print_exc()
+            continue
         if df is not None and len(df) > 0:
-            outstanding = basics.loc[symbols[i]]['outstanding'] * 100000000
-            df = df[::-1]
-            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
-            df['turnover'] = df['volume'] / outstanding * 100
-            df = df[tsfeatures]
-            f.create_dataset(symbols[i], data=np.array(df[1:].astype(float)))
-        i += 1
+            f.create_dataset(symb, data=df)
     f.flush()
     return f
 
@@ -537,7 +379,7 @@ def create_today_dataset(lookback=5):
     rtdataset = []
     print ("[ create today's dataset ]... for price prediction")
 
-    tsdata_dict = get_newly_data()
+    tsdata_dict = get_newly_kdata()
     rtdata_df = ts.get_today_all()[rtlabels]
     symbs = np.array(rtdata_df['code'])
     rtset = np.array(rtdata_df.astype(float))
