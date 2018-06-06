@@ -125,13 +125,21 @@ def catf3(data):
 
 def catf31(data):
     data_y = data.copy()
+    data_y[data_y < 0.5] = 101
+    data_y[data_y < 3] = 102
+    data_y[data_y < 50] = 103
+    data_y -= 101
+    data_y = np_utils.to_categorical(data_y, 3)
+    return data_y
+
+def catf32(data):
+    data_y = data.copy()
     data_y[data_y < 0.5] = 51
-    data_y[data_y < 2] = 52
+    data_y[data_y < 3] = 52
     data_y[data_y < 50] = 53
     data_y -= 51
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
-
 
 def catf4(data):
     data_y = data.copy()
@@ -154,6 +162,10 @@ def catf21(data):
     return data_y
 
 
+def noncatf(data):
+    return data
+
+
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points
     plot_data = []
@@ -171,8 +183,9 @@ def plot_out(sortout, x_index, y_index, points=200):
 
 
 def test_plot(mstr):
-    d = np.loadtxt("./models/"+mstr+"/2017_02_2_result.txt")
-    plot_out(d, 2, 3)
+    d = np.loadtxt("models/MKC31LMAX/MK_T3_B512_C31_E1000_K5_Lmax_Xt1664sgd/val_result.txt")
+    t = d[d[:, -2] < -9.8]
+    pass
 
 
 def refresh_kdata(start='2015-01-01', ktype='5', force=False):
@@ -255,7 +268,7 @@ def get_index_list(m):
 
 
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
-    print ("[ create_dataset]... of stock category %s with %i" % (index, days))
+    print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
     if __debug__:
         index = 'debug'
@@ -295,38 +308,58 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                 pass
             continue
 
+        # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
         for i in range(1, len(df)/knum-days):
             nowcell = np.array(datall[i*knum:(i+days)*knum])
-            nxtcell = np.array(datall[(i+days)*knum:(i+days+1)*knum])
+
+            # 当天涨停，无法进行买入操作，删除此类案例
+            if (dclose[i+days-1]-dclose[i+days-2])/dclose[i+days-2] > 0.098:
+                continue
+
+            # nowcell里的最后一个收盘价
+            nowclose = nowcell[-1, 1]
+
+            nxtcell = np.array(datall[(i + days) * knum:(i + days + 1) * knum])
+            max_price = min((max(nxtcell[:, 2]) - nowclose) / nowclose * 100, 10)
+            min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
+            cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100,10),-10)
+            c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100,10),-10)
+
+            # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
+            # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
+
+            # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
             for k in range(days):
                 nowcell[k*knum:(k+1)*knum,0:4] = (nowcell[k*knum:(k+1)*knum,0:4] - dclose[i+k-1]) / dclose[i+k-1] * 10 + K.epsilon()
 
             # 异常数据，跳过
-            if abs(nowcell[:,0:4].any()) > 11:continue
-            # 当天涨停，删除此类案例
-            if nowcell[-1,1] > 0.98: continue
+            if abs(nowcell[:,0:4].any()) > 1.1:
+                continue
 
-            pchange_pre = float(nowcell[-1,1]*10)
+            # 过去days天股价变化总和，范围[-10*days, +10*days]
+            pchange_days = float(nowcell[-1,1]*10)
 
             try:
-                nowcell[:,4] = preprocessing.scale(nowcell[:,4],copy=False)
+                nowcell[:,4] = minmax_scale(preprocessing.scale(nowcell[:,4],copy=False))
+                # nowcell[:, 0:4] = minmax_scale(nowcell[:, 0:4])
             except:
                 pass
+
+            # reshape to [days, knum, cols]
             nowcell = nowcell.reshape(nowcell.shape[0]/knum,knum,nowcell.shape[-1])
 
-            max_price = min((max(nxtcell[:,2])-dclose[i+days-1])/dclose[i+days-1]*100, 20)
-            min_price = max((min(nxtcell[:,3])-dclose[i+days-1])/dclose[i+days-1]*100,-20)
-            cls_price = (nxtcell[-1,1]-dclose[i+days-1])/dclose[i+days-1] * 100
-            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,3]),max(nxtcell[:,2]),pchange_pre, cls_price,min_price,max_price]
-
-            if abs(max_price)>11 or abs(min_price) > 11:
-                # print '*' * 50
-                # print lbdata
-                # print '*' * 50
+            if (abs(max_price)>11 or abs(min_price) > 11) and __debug__:
+                print '*' * 50
+                print lbdata
+                print '*' * 50
                 continue
 
             bsdata = np.array(intdate(mydate(ddate[i+days].split(' ')[0])))
-            data_cell = [bsdata, nowcell[:,:,-3:], np.array(lbdata)]
+
+            # lbadata [日期，股票代码，最低价，最高价,pchange_days, c2o, cls, min, max]
+            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,3]),max(nxtcell[:,2]),pchange_days, c2o_price,cls_price,min_price,max_price]
+
+            data_cell = [bsdata, nowcell, np.array(lbdata)]
             data_all.append(data_cell)
     print "[ Finish create data set]"
     return data_all
@@ -515,6 +548,7 @@ def main():
     # print '#####get dataset2 samples############'
     # print data
     refresh_kdata(force=True)
+    # test_plot(None)
     # ncreate_dataset(start='2016-01-01')
 #     get_history_data(4000, start='2005-01-01', end=None, index=None)
 # #    get_newly_data2('2016-01-01', 10)

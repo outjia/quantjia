@@ -20,7 +20,7 @@ def parse_params(mstr):
     # M1_T5_B256_C3_E100_Lmin_Mgem_K5
     # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, label = 'min', mem = 'gem'
 
-    catf = {'C3':'catf3', 'C4':'catf4', 'C2':'catf2', 'C31':'catf31','C1':''}
+    catf = {'C3':'catf3', 'C4':'catf4', 'C2':'catf2', 'C31':'catf31','C32':'catf32','C1':'noncatf'}
     models = {'M1':'build_model', 'M2':'build_model2', 'M3':'build_model3', 'M4':'build_model4', 'M5':'build_model5', 'MK':'nbuild_model'}
     params = {}
     params['mclass'] = ''
@@ -41,7 +41,7 @@ def parse_params(mstr):
             params['batch_size'] = int(s[1:])
         if s.startswith('C'):
             params['catf'] = catf[s]
-            params['mclass'] = params['mclass'] + s
+            params['mclass'] = params['mclass'] + s[0:2]
             params['outdim'] = int(s[1:2])
             if int(s[1:]) > 3:
                 params['cmetrics']['top_t2p1'] = top_t2p1
@@ -64,7 +64,7 @@ def ntrain_model(mstr, start, mid, end):
     params = parse_params(mstr)
     print ("[ train model ]... " + mstr)
 
-    labcol_map = {'close': -3, 'min': -2, 'max': -1}
+    labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
 
     train = ncreate_dataset(index='',days=params['lookback'], start=start, end=mid, ktype=params['ktype'])
@@ -96,7 +96,7 @@ def ntrain_model(mstr, start, mid, end):
     if __debug__:
         patience = 2
     else:
-        patience = 200
+        patience = 1000
 
     logdir =datetime.datetime.now().strftime(path+'/%Y%m%d.%H.%M.%S.run')
 
@@ -112,16 +112,19 @@ def ntrain_model(mstr, start, mid, end):
               validation_data=(test_x, test_y), callbacks=callbacks)
     save_model(model, path + '/model.h5')
 
-    proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
+    if params['catf'] == 'noncatf':
+        return None
+    else:
+        proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
 
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
-    if not __debug__:
-        np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
+        out = np.hstack([proba, test_y_v])
+        sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
+        if not __debug__:
+            np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
 
-    print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,mstr)
-    print "[ End train model ]"
-    return sortout
+        print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,mstr)
+        print "[ End train model ]"
+        return sortout
 
 
 def nvalid_model(mstr, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None):
