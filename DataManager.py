@@ -35,8 +35,6 @@ tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
 st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
 
-cons = ts.get_apis()
-
 
 def mydate(datestr):
     if isinstance(datestr, list) or isinstance(datestr, np.ndarray):
@@ -134,8 +132,8 @@ def catf31(data):
 
 def catf32(data):
     data_y = data.copy()
-    data_y[data_y < 0.5] = 51
-    data_y[data_y < 3] = 52
+    data_y[data_y < 0.01] = 51
+    data_y[data_y < 2] = 52
     data_y[data_y < 50] = 53
     data_y -= 51
     data_y = np_utils.to_categorical(data_y, 3)
@@ -161,6 +159,15 @@ def catf21(data):
     data_y = np_utils.to_categorical(data_y, 2)
     return data_y
 
+
+def catf22(data):
+    # 对low进行预测
+    data_y = data.copy()
+    data_y[data_y <= 1] = 31
+    data_y[data_y < 31] = 32
+    data_y -= 31
+    data_y = np_utils.to_categorical(data_y, 2)
+    return data_y
 
 def noncatf(data):
     return data
@@ -191,6 +198,7 @@ def test_plot(mstr):
 def refresh_kdata(start='2015-01-01', ktype='5', force=False):
     # refresh history data using get_k_data
     # force, force to get_k_data online
+    cons = ts.get_apis()
 
     edate = datetime.date.today() - timedelta(days=1)
     edate = edate.strftime('%Y-%m-%d')
@@ -271,16 +279,19 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
     if __debug__:
-        index = 'debug'
+        index = ['debug']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
     start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
     path = './data/k' + ktype + '_data/'
 
-    basics = get_basic_data()
-    symbols = int2str(list(basics.index))
-    if not (index is None or index == ''):
-        symbols = list(get_index_list(index).code)
+    symbols = []
+    if (index is None or len(index)==0):
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
         # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
 
     knum = 240/int(ktype)
@@ -367,6 +378,8 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
 
 def get_newly_kdata(ktype='5',days=30, inc=True):
     print ("[ get newly kdata]... for %s days"%(str(days)))
+
+    cons = ts.get_apis()
 
     start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
     end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
