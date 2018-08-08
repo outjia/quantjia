@@ -67,7 +67,7 @@ def ntrain_model(mstr, start, mid, end):
     labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
-    # index = None
+    index = None
 
     train = ncreate_dataset(index=index, days=params['lookback'], start=start, end=mid, ktype=params['ktype'])
     test = ncreate_dataset(index=index, days=params['lookback'], start=mid, end=end, ktype=params['ktype'])
@@ -145,6 +145,109 @@ def ntrain_model(mstr, start, mid, end):
     print "[ End train model ]"
 
 
+def ntrain_model2(mstr, start, end, step=30):
+    params = parse_params(mstr)
+    print ("[ train model ]... " + mstr)
+
+    labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
+    labelcol = labcol_map[params['label']]
+    index = ['sme', 'gem']
+    # index = None
+
+    path = 'models/' + params['mclass']+ '/'+params['model_name']
+    model_dir = os.path.dirname(path)
+    if not os.path.exists(model_dir): os.makedirs(model_dir)
+
+    if __debug__:
+        patience = 2
+    else:
+        patience = 1000
+
+    start_dt = datetime.datetime.strptime(start, '%Y-%m-%d')
+    end_dt = datetime.datetime.strptime(end, '%Y-%m-%d')
+    mid_dt = start_dt + timedelta(step)
+    end_dt1 = mid_dt+timedelta(step)
+
+    result_date = []
+    result_data = []
+    path_m = path
+    while end_dt1 + timedelta(step/2) < end_dt:
+        start_str =  start_dt.strftime('%Y-%m-%d')
+        mid_str = mid_dt.strftime('%Y-%m-%d')
+        end_str = end_dt1.strftime('%Y-%m-%d')
+
+        train = ncreate_dataset(index=index, days=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
+        test = ncreate_dataset(index=index, days=params['lookback'], start=mid_str, end=end_str, ktype=params['ktype'])
+
+        # dataset = ncreate_dataset(index=None,days=params['lookback'], start=start, end=end, ktype=params['ktype'])
+        # train, test = split_dataset(dataset, 0.75, params['batch_size'])
+
+        bstrain, tstrain, lbtrain_v = create_feeddata(train)
+        bstest, tstest, lbtest_v = create_feeddata(test)
+
+        train_x = tstrain
+        train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
+        train_y, train_x, non = balance_data(train_y, train_x)
+
+        sz = len(train_y)/params['batch_size'] * params['batch_size']
+        train_x = train_x[:sz]
+        train_y = train_y[:sz]
+
+        test_x = tstest
+        test_y = eval(params['catf'])(lbtest_v[:,labelcol])
+        test_y_v = lbtest_v
+        balance_data(test_y, test_x)
+
+        params['indim'] = train_x.shape[- 1]
+
+        logdir =datetime.datetime.now().strftime(path_m+'/S'+start_str)
+        path = logdir
+
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode='min'),
+            ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
+            TensorBoard(log_dir=logdir, histogram_freq=0, write_graph=False, write_images=False),
+        ]
+        model = eval(params['model'])(params)
+        print "model summary"
+        model.summary()
+        model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],validation_split=0.33,callbacks=callbacks)
+                  # validation_data=(test_x, test_y), callbacks=callbacks)
+        save_model(model, path + '/model.h5')
+
+        if params['catf'] == 'noncatf':
+            return None
+        else:
+            print '使用最优模型进行预测: S='+start_str
+            model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
+            proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
+
+            out = np.hstack([proba, test_y_v])
+            sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
+            if not __debug__:
+                np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
+
+            print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,path)
+            print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
+            result_date.append(start_str)
+            result_data.append(sortout)
+
+        start_dt = mid_dt
+        mid_dt = end_dt1
+        if end_dt1 + timedelta(step *3 / 2) >=end_dt:
+            end_dt1 = end_dt
+        else:
+            end_dt1 = end_dt1 + timedelta(step)
+    i=0
+    while i<len(result_date):
+        print '================'+result_date[i]+'=================='
+        print_dist(result_data[i], params['outdim'], labelcol, 2)
+        print_dist(result_data[i], params['outdim'], labelcol, 10)
+        # print_dist_cut(result_data[i], params['outdim'], labelcol, 20)
+        i+=1
+
+    print "[ End train model ]"
+
 def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None):
     print ("[ valid model: %s ]... with data from %s to %s"%(mstr,start, end))
     params = parse_params(mstr)
@@ -171,7 +274,7 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
     sortout = out[(-out[:, proba.shape[ - 1] - 1]).argsort(), :]
 
     print_dist(sortout, proba.shape[ - 1] - 1, labelcol,20)
-    print_dist_cut(sortout, proba.shape[ - 1] - 1, labelcol,20)
+    print_dist_cut(sortout, params['outdim'] - 1, labelcol,20)
 
     if not __debug__:
         np.savetxt(path + "/best_model."+start+"."+end+".txt", sortout, fmt='%f')

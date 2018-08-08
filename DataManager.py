@@ -24,16 +24,17 @@ from sklearn import preprocessing
 import keras.backend as K
 
 from keras.utils import np_utils
+import tushare.util.dateu as dateu
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
              'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
              'npr', 'holders']
 bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
              'gpr', 'npr']
-tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover','idx_change']
+tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover', 'idx_change']
 tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
-st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
+st_cat = {'sme': '399005', 'gem': '399006', 'hs300s': '000300', 'sz50s': '000016', 'zz500s': '000008'}
 
 
 def mydate(datestr):
@@ -44,7 +45,7 @@ def mydate(datestr):
         return datelist
     else:
         datearr = datestr.split('-')
-        if len(datearr) !=3: raise "Wrong date string format " + datestr
+        if len(datearr) != 3: raise "Wrong date string format " + datestr
         return date(int(datearr[0]), int(datearr[1]), int(datearr[2]))
 
 
@@ -55,7 +56,7 @@ def intdate(dt):
             intdatelist.append(intdate(d))
         return intdatelist
     else:
-        return dt.year*10000+dt.month*100+dt.day
+        return dt.year * 10000 + dt.month * 100 + dt.day
 
 
 def intdate2str(dt):
@@ -65,10 +66,10 @@ def intdate2str(dt):
             strdate.append(intdate2str(d))
         return strdate
     else:
-        year = dt/10000
-        month = (dt - year*10000)/100
-        day = dt - year*10000 - month*100
-        return str(year)+'-'+str(month)+'-'+str(day)
+        year = dt / 10000
+        month = (dt - year * 10000) / 100
+        day = dt - year * 10000 - month * 100
+        return str(year) + '-' + str(month) + '-' + str(day)
 
 
 def intstr(ints):
@@ -86,22 +87,24 @@ def int2str(ints):
     if isinstance(ints, list) or isinstance(ints, np.ndarray):
         lst = []
         for i in ints:
-            lst.append(sb[0:6-len(str(int(i)))] + str(i))
+            lst.append(sb[0:6 - len(str(int(i)))] + str(i))
         return lst
     else:
-        return sb[0:6-len(str(int(ints)))] + str(int(ints))
+        return sb[0:6 - len(str(int(ints)))] + str(int(ints))
 
 
 def minmax_scale(arr):
     mi = np.min(arr)
     mx = np.max(arr)
-    arr = (arr-mi)/(mx-mi+K.epsilon())+K.epsilon()
+    arr = (arr - mi) / (mx - mi + K.epsilon()) + K.epsilon()
     return arr
+
 
 def pricechange_scale(arr):
     mi = np.min(arr)
-    arr = (arr-mi)/(mi+K.epsilon())*100
+    arr = (arr - mi) / (mi + K.epsilon()) * 100
     return arr
+
 
 def catf2(data):
     data_y = data.copy()
@@ -110,6 +113,7 @@ def catf2(data):
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
     return data_y
+
 
 def catf3(data):
     data_y = data.copy()
@@ -130,6 +134,7 @@ def catf31(data):
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
 
+
 def catf32(data):
     data_y = data.copy()
     data_y[data_y < 0.01] = 51
@@ -138,6 +143,7 @@ def catf32(data):
     data_y -= 51
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
+
 
 def catf4(data):
     data_y = data.copy()
@@ -169,6 +175,7 @@ def catf22(data):
     data_y = np_utils.to_categorical(data_y, 2)
     return data_y
 
+
 def noncatf(data):
     return data
 
@@ -198,43 +205,51 @@ def test_plot(mstr):
 def refresh_kdata(start='2015-01-01', ktype='5', force=False):
     # refresh history data using get_k_data
     # force, force to get_k_data online
-    cons = ts.get_apis()
 
-    edate = datetime.date.today() - timedelta(days=1)
-    edate = edate.strftime('%Y-%m-%d')
-    path = './data/k'+ktype+'_data/'
-    if not os.path.exists(path+edate):
-        if not os.path.exists(path):
-            os.mkdir(path)
-        os.system('touch ' + path + edate)
-    elif not force:
-        print ("[ refresh_kdata ]... using existing data in "%(path))
+    path = './data/k' + ktype + '_data/'
+    if not force:
+        print ("[ refresh_kdata ]... using existing data in " % (path))
         return
 
     print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
 
-    index = ts.get_index()
+    cons = ts.get_apis()
+
+    # 获取股票K线数据
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
-    symbols = list(basics.index) + list(index.code)
-
-    failsymbs = []
-    for symb in symbols:
+    failed_symbols = []
+    for symb in list(basics.index):
         file = path + symb + '.csv'
-        if os.path.exists(file):
-            continue
-
         try:
-            df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
+            df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
-            print "Exception when processing " + symb
-            failsymbs.append(symb)
+            print "Exception when processing stock:" + symb
             traceback.print_exc()
+            failed_symbols.append(symb)
             continue
         if df is not None and len(df) > 0:
             df.to_csv(file)
-    print "Failed Symbols: "
-    print failsymbs
+    print "Failed stock symbols: "
+    print failed_symbols
+
+    # 获取指数K线数据
+    index = ts.get_index()
+    index.to_csv('./data/index.csv')
+    failed_symbols = []
+    for symb in list(index.code):
+        file = path + symb + '.csv'
+        try:
+            df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
+        except:
+            print "Exception when processing index:" + symb
+            traceback.print_exc()
+            failed_symbols.append(symb)
+            continue
+        if df is not None and len(df) > 0:
+            df.to_csv(file)
+    print "Failed index symbols: "
+    print failed_symbols
 
     print "获取指数成分股列表"
     clist = ts.get_sme_classified()
@@ -271,12 +286,14 @@ def get_basic_data(online=False, cache=True):
 
 
 def get_index_list(m):
-    listfile = './data/'+ m +'.csv'
-    return pd.read_csv(listfile, index_col=0, dtype={'code': str})
+    file = './data/' + m + '.csv'
+    return pd.read_csv(file, index_col=0, dtype={'code': str})
 
 
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
+
+    features = ['open', 'close', 'high', 'low', 'tor', 'vr']
 
     if __debug__:
         index = ['debug']
@@ -286,7 +303,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     path = './data/k' + ktype + '_data/'
 
     symbols = []
-    if (index is None or len(index)==0):
+    if index is None or len(index) == 0:
         basics = get_basic_data()
         symbols = int2str(list(basics.index))
     else:
@@ -294,23 +311,22 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             symbols.extend(list(get_index_list(i).code))
         # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
 
-    knum = 240/int(ktype)
+    knum = 240 / int(ktype)
 
     data_all = []
     for symb in symbols:
         try:
             df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
-            if df is not None:
+            if df is not None and len(df) > 0:
                 df = df[end:start]
+                df = df.iloc[0:len(df) / knum * knum]
                 df.fillna(method='bfill')
                 df.fillna(method='ffill')
-                if index is not None: df = df#.join(idx_df)
+                if index is not None: df = df  # .join(idx_df)
 
-            dclose = np.array(df.ix[-knum::-knum,'close'])
+            dclose = np.array(df.ix[-knum::-knum, 'close'])
             ddate = df.index[-knum::-knum]
-            datall = np.array(df.ix[::-1,['open','close','high','low','vol']])
-
-            # df = df[end:start]
+            datall = np.array(df.ix[::-1, features])
         except:
             if __debug__:
                 traceback.print_exc()
@@ -320,11 +336,11 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             continue
 
         # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
-        for i in range(1, len(df)/knum-days):
-            nowcell = np.array(datall[i*knum:(i+days)*knum])
+        for i in range(1, len(df) / knum - days):
+            nowcell = np.array(datall[i * knum:(i + days) * knum])
 
             # 当天涨停，无法进行买入操作，删除此类案例
-            if (dclose[i+days-1]-dclose[i+days-2])/dclose[i+days-2] > 0.098:
+            if (dclose[i + days - 1] - dclose[i + days - 2]) / dclose[i + days - 2] > 0.099:
                 continue
 
             # nowcell里的最后一个收盘价
@@ -333,42 +349,43 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             nxtcell = np.array(datall[(i + days) * knum:(i + days + 1) * knum])
             max_price = min((max(nxtcell[:, 2]) - nowclose) / nowclose * 100, 10)
             min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
-            cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100,10),-10)
-            c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100,10),-10)
+            cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
+            c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
 
             # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
             # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
 
             # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
             for k in range(days):
-                nowcell[k*knum:(k+1)*knum,0:4] = (nowcell[k*knum:(k+1)*knum,0:4] - dclose[i+k-1]) / dclose[i+k-1] * 10 + K.epsilon()
+                nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[i + k - 1]) / dclose[i + k - 1] * 10 + K.epsilon()
 
             # 异常数据，跳过
-            if abs(nowcell[:,0:4].any()) > 1.1:
+            if abs(nowcell[:, 0:4].any()) > 1.1:
                 continue
 
             # 过去days天股价变化总和，范围[-10*days, +10*days]
-            pchange_days = float(nowcell[-1,1]*10)
+            pchange_days = float(nowcell[-1, 1] * 10)
 
             try:
-                nowcell[:,4] = minmax_scale(preprocessing.scale(nowcell[:,4],copy=False))
-                # nowcell[:, 0:4] = minmax_scale(nowcell[:, 0:4])
+                # 归一化成交量
+                if features[4] == 'vol':
+                    nowcell[:, 4] = minmax_scale(preprocessing.scale(nowcell[:, 4], copy=False))
             except:
                 pass
 
             # reshape to [days, knum, cols]
-            nowcell = nowcell.reshape(nowcell.shape[0]/knum,knum,nowcell.shape[-1])
+            nowcell = nowcell.reshape(nowcell.shape[0] / knum, knum, nowcell.shape[-1])
 
-            if (abs(max_price)>11 or abs(min_price) > 11) and __debug__:
+            if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
                 print '*' * 50
                 print lbdata
                 print '*' * 50
                 continue
 
-            bsdata = np.array(intdate(mydate(ddate[i+days].split(' ')[0])))
+            bsdata = np.array(intdate(mydate(ddate[i + days].split(' ')[0])))
 
             # lbadata [日期，股票代码，最低价，最高价,pchange_days, c2o, cls, min, max]
-            lbdata = [intdate(mydate(ddate[i+days].split(' ')[0])),int(symb),min(nxtcell[:,3]),max(nxtcell[:,2]),pchange_days, c2o_price,cls_price,min_price,max_price]
+            lbdata = [intdate(mydate(ddate[i + days].split(' ')[0])), int(symb), min(nxtcell[:, 3]), max(nxtcell[:, 2]), pchange_days, c2o_price, cls_price, min_price, max_price]
 
             data_cell = [bsdata, nowcell, np.array(lbdata)]
             data_all.append(data_cell)
@@ -376,8 +393,8 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     return data_all
 
 
-def get_newly_kdata(ktype='5',days=30, inc=True):
-    print ("[ get newly kdata]... for %s days"%(str(days)))
+def get_newly_kdata(ktype='5', days=30, inc=True):
+    print ("[ get newly kdata]... for %s days" % (str(days)))
 
     cons = ts.get_apis()
 
@@ -391,7 +408,7 @@ def get_newly_kdata(ktype='5',days=30, inc=True):
 
     failsymbs = []
     if inc and os.path.exists('./data/' + end + '/fails.csv'):
-        symbols = pd.read_csv('./data/' + end + '/fails.csv',dtype='str')
+        symbols = pd.read_csv('./data/' + end + '/fails.csv', dtype='str')
     else:
         index = ts.get_index()
         basics = ts.get_stock_basics()
@@ -400,7 +417,7 @@ def get_newly_kdata(ktype='5',days=30, inc=True):
 
     for symb in symbols:
         try:
-            df = ts.bar(symb,conn=cons,adj='qfq',factors=['vr','tor'],freq=ktype+'min',start_date=start,end_date='')
+            df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
             print "Exception when processing " + symb
             failsymbs.append(symb)
@@ -437,11 +454,11 @@ def create_today_dataset(lookback=5):
 
         tsdata_df = tsdata_dict[symb]
         if len(tsdata_df) >= lookback - 1:
-            ndata_stock = np.array(tsdata_df[1-lookback:])
+            ndata_stock = np.array(tsdata_df[1 - lookback:])
             ndata_stock = np.vstack([ndata_stock, rtdata_v[1:]])
 
-            p_change = ndata_stock[:,-2].reshape(-1, 1) / 10
-            turnover = minmax_scale(ndata_stock[:,-1].reshape(-1, 1))
+            p_change = ndata_stock[:, -2].reshape(-1, 1) / 10
+            turnover = minmax_scale(ndata_stock[:, -1].reshape(-1, 1))
             ohcl = minmax_scale(ndata_stock[:, 0:4])
             tsdata = np.hstack([ohcl, p_change, turnover])
             tsdataset.append(tsdata)
@@ -503,13 +520,13 @@ def create_feeddata(dataset):
 
 def balance_data(data_y, data_x, data_x2=None):
     # 对于数据倾斜（数据类别不平衡），此函数对少数类的样本进行复制，以消除类别的不平衡
-    a = np.sum(data_y,axis=0)
+    a = np.sum(data_y, axis=0)
     print "Category distribution before balancing"
     print a
-    b = np.max(a)/(a)
+    b = np.max(a) / (a)
     c = long(np.sum(a * b))
-    data_xx = np.zeros([c]+list(data_x.shape[1:]))
-    data_yy = np.zeros([c]+list(data_y.shape[1:]))
+    data_xx = np.zeros([c] + list(data_x.shape[1:]))
+    data_yy = np.zeros([c] + list(data_y.shape[1:]))
     data_xx2 = None
     if data_x2 is not None:
         data_xx2 = np.zeros([c] + list(data_x2.shape[1:]))
@@ -523,8 +540,9 @@ def balance_data(data_y, data_x, data_x2=None):
                 data_xx2[l] = data_x2[i]
             l += 1
     print "Category distribution after balancing"
-    print np.sum(data_yy,axis=0)
+    print np.sum(data_yy, axis=0)
     return data_yy, data_xx, data_xx2
+
 
 def main():
     # data = create_dataset(['601866'])
@@ -563,15 +581,17 @@ def main():
     refresh_kdata(force=True)
     # test_plot(None)
     # ncreate_dataset(start='2016-01-01')
+
+
 #     get_history_data(4000, start='2005-01-01', end=None, index=None)
 # #    get_newly_data2('2016-01-01', 10)
 #    pass
 
-    # arr = np.arange(12).reshape(3,4)
-    # print arr
-    # a = minmax_scale(arr)
-    # print a
-    # print arr
+# arr = np.arange(12).reshape(3,4)
+# print arr
+# a = minmax_scale(arr)
+# print a
+# print arr
 
 if __name__ == '__main__':
     main()
