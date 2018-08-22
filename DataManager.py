@@ -224,14 +224,14 @@ def refresh_kdata(start='2015-01-01', ktype='5', force=False):
         try:
             df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
-            print "Exception when processing stock:" + symb
+            print ("Exception when processing stock:" + symb)
             traceback.print_exc()
             failed_symbols.append(symb)
             continue
         if df is not None and len(df) > 0:
             df.to_csv(file)
-    print "Failed stock symbols: "
-    print failed_symbols
+    print ("Failed stock symbols: ")
+    print (failed_symbols)
 
     # 获取指数K线数据
     index = ts.get_index()
@@ -242,16 +242,16 @@ def refresh_kdata(start='2015-01-01', ktype='5', force=False):
         try:
             df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
-            print "Exception when processing index:" + symb
+            print ("Exception when processing index:" + symb)
             traceback.print_exc()
             failed_symbols.append(symb)
             continue
         if df is not None and len(df) > 0:
             df.to_csv(file)
-    print "Failed index symbols: "
-    print failed_symbols
+    print ("Failed index symbols: ")
+    print (failed_symbols)
 
-    print "获取指数成分股列表"
+    print ("获取指数成分股列表")
     clist = ts.get_sme_classified()
     if clist is not None and len(clist) > 0:
         clist.to_csv('./data/sme.csv')
@@ -293,10 +293,7 @@ def get_index_list(m):
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    features = ['open', 'close', 'high', 'low', 'tor', 'vr']
-
-    if __debug__:
-        index = ['debug']
+    features = ['open', 'close', 'high', 'low',  'tor']#, 'vr']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
     start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
@@ -311,7 +308,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             symbols.extend(list(get_index_list(i).code))
         # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
 
-    knum = 240 / int(ktype)
+    knum = 240 // int(ktype)
 
     data_all = []
     for symb in symbols:
@@ -319,7 +316,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
             if df is not None and len(df) > 0:
                 df = df[end:start]
-                df = df.iloc[0:len(df) / knum * knum]
+                df = df.iloc[0:int(len(df) // knum * knum)]
                 df.fillna(method='bfill')
                 df.fillna(method='ffill')
                 if index is not None: df = df  # .join(idx_df)
@@ -336,7 +333,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             continue
 
         # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
-        for i in range(1, len(df) / knum - days):
+        for i in range(1, len(df) // knum - days):
             nowcell = np.array(datall[i * knum:(i + days) * knum])
 
             # 当天涨停，无法进行买入操作，删除此类案例
@@ -367,19 +364,28 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             pchange_days = float(nowcell[-1, 1] * 10)
 
             try:
-                # 归一化成交量
-                if features[4] == 'vol':
-                    nowcell[:, 4] = minmax_scale(preprocessing.scale(nowcell[:, 4], copy=False))
+                j = 4
+                if 'vol' in features:
+                    # 归一化成交量
+                    nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                    j = j + 1
+                # if 'tor' in features:
+                #     # 归一化换手率
+                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                #     j = j + 1
+                # if 'vr' in features:
+                #     # 归一化量比
+                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
             except:
                 pass
 
             # reshape to [days, knum, cols]
-            nowcell = nowcell.reshape(nowcell.shape[0] / knum, knum, nowcell.shape[-1])
+            nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
 
             if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
-                print '*' * 50
-                print lbdata
-                print '*' * 50
+                print ('*' * 50)
+                print (lbdata)
+                print ('*' * 50)
                 continue
 
             bsdata = np.array(intdate(mydate(ddate[i + days].split(' ')[0])))
@@ -389,7 +395,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
 
             data_cell = [bsdata, nowcell, np.array(lbdata)]
             data_all.append(data_cell)
-    print "[ Finish create data set]"
+    print ("[ Finish create data set]")
     return data_all
 
 
@@ -419,7 +425,7 @@ def get_newly_kdata(ktype='5', days=30, inc=True):
         try:
             df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
-            print "Exception when processing " + symb
+            print ("Exception when processing " + symb)
             failsymbs.append(symb)
             traceback.print_exc()
             continue
@@ -480,12 +486,12 @@ def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     if seed is None:
         seed = time.mktime(time.localtime())
 
-    print "[ split_dateset ]... into train and test with seed:" + str(seed)
+    print ("[ split_dateset ]... into train and test with seed:" + str(seed))
     np.random.seed(int(seed))
     np.random.shuffle(dataset)
     # only take effect for array, so need to convert to numpy.array before shuffle
     # 多维矩阵中，只对第一维（行）做打乱顺序操作
-    train_size = (long(len(dataset) * train_psize) / batch_size) * batch_size
+    train_size = (len(dataset) * train_psize) / batch_size * batch_size
     test_size = (len(dataset) - train_size) / batch_size * batch_size
     train = dataset[:train_size]
     test = dataset[train_size: train_size + test_size]
@@ -499,7 +505,7 @@ def create_feeddata(dataset):
     :param dataset: source dataset, a list of data cell of [bsdata, tsdata, lbdata]
     :return: tuple of (bsdata, tsdata, lbdata)
     """
-    print "[ create_feeddata]..."
+    print ("[ create_feeddata]...")
     rows = [len(dataset)]
     if dataset[0][0] is not None:
         bsdata = np.zeros(rows + list(dataset[0][0].shape))
@@ -514,17 +520,17 @@ def create_feeddata(dataset):
         lbdata_v[i] = dataset[i][2]
         i += 1
 
-    print "[ end create_feeddata]..."
+    print ("[ end create_feeddata]...")
     return bsdata, tsdata, lbdata_v
 
 
 def balance_data(data_y, data_x, data_x2=None):
     # 对于数据倾斜（数据类别不平衡），此函数对少数类的样本进行复制，以消除类别的不平衡
     a = np.sum(data_y, axis=0)
-    print "Category distribution before balancing"
-    print a
+    print ("Category distribution before balancing")
+    print (a)
     b = np.max(a) / (a)
-    c = long(np.sum(a * b))
+    c = int(np.sum(a * b))
     data_xx = np.zeros([c] + list(data_x.shape[1:]))
     data_yy = np.zeros([c] + list(data_y.shape[1:]))
     data_xx2 = None
@@ -539,8 +545,8 @@ def balance_data(data_y, data_x, data_x2=None):
             if data_x2 is not None:
                 data_xx2[l] = data_x2[i]
             l += 1
-    print "Category distribution after balancing"
-    print np.sum(data_yy, axis=0)
+    print ("Category distribution after balancing")
+    print (np.sum(data_yy, axis=0))
     return data_yy, data_xx, data_xx2
 
 

@@ -56,7 +56,9 @@ def parse_params(mstr):
             params['mem'] = s[1:]
         if s.startswith('K'):
             params['ktype'] = s[1:]
-    params['metrics'].extend(sorted(params['cmetrics'].values()))
+    a = list(params['cmetrics'].keys())
+    mymetrics = sorted(a)
+    params['metrics'].extend(params['cmetrics'].values())
     return params
 
 
@@ -67,7 +69,9 @@ def ntrain_model(mstr, start, mid, end):
     labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
-    index = None
+    # index = None
+    if __debug__:
+        index = ['debug']
 
     train = ncreate_dataset(index=index, days=params['lookback'], start=start, end=mid, ktype=params['ktype'])
     test = ncreate_dataset(index=index, days=params['lookback'], start=mid, end=end, ktype=params['ktype'])
@@ -82,7 +86,7 @@ def ntrain_model(mstr, start, mid, end):
     train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
     train_y, train_x, non = balance_data(train_y, train_x)
 
-    sz = len(train_y)/params['batch_size'] * params['batch_size']
+    sz = len(train_y)//params['batch_size'] * params['batch_size']
     train_x = train_x[:sz]
     train_y = train_y[:sz]
 
@@ -103,15 +107,16 @@ def ntrain_model(mstr, start, mid, end):
         patience = 1000
 
     logdir =datetime.datetime.now().strftime(path+'/S'+start+'.%Y%m%d.%H.%M.%S.run')
+    if not os.path.exists(logdir): os.makedirs(logdir)
     path = logdir
 
     callbacks = [
         EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode='min'),
-        ModelCheckpoint(path+'/best_model.h5', monitor='val_'+params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
-        TensorBoard(log_dir=logdir, histogram_freq=0, write_graph=False, write_images=False),
+        ModelCheckpoint(path+'/best_model.h5', monitor='val_'+list(params['main_metric'].keys())[0], save_best_only=True, verbose=0, mode='max'),
+        # TensorBoard(log_dir=logdir, histogram_freq=0, write_graph=False, write_images=False),
     ]
     model = eval(params['model'])(params)
-    print "model summary"
+    print ("model summary")
     model.summary()
     model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],validation_split=0.33,callbacks=callbacks)
               # validation_data=(test_x, test_y), callbacks=callbacks)
@@ -130,7 +135,7 @@ def ntrain_model(mstr, start, mid, end):
         #
         # print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,mstr)
 
-        print '使用最优模型进行预测'
+        print ('使用最优模型进行预测')
         model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
         proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
 
@@ -142,7 +147,7 @@ def ntrain_model(mstr, start, mid, end):
         print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,path)
         print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
 
-    print "[ End train model ]"
+    print ("[ End train model ]")
 
 
 def ntrain_model2(mstr, start, end, step=30):
@@ -153,6 +158,8 @@ def ntrain_model2(mstr, start, end, step=30):
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
     # index = None
+    if __debug__:
+        index = ['debug']
 
     path = 'models/' + params['mclass']+ '/'+params['model_name']
     model_dir = os.path.dirname(path)
@@ -171,7 +178,7 @@ def ntrain_model2(mstr, start, end, step=30):
     result_date = []
     result_data = []
     path_m = path
-    while end_dt1 + timedelta(step/2) < end_dt:
+    while mid_dt < end_dt:
         start_str =  start_dt.strftime('%Y-%m-%d')
         mid_str = mid_dt.strftime('%Y-%m-%d')
         end_str = end_dt1.strftime('%Y-%m-%d')
@@ -209,7 +216,7 @@ def ntrain_model2(mstr, start, end, step=30):
             TensorBoard(log_dir=logdir, histogram_freq=0, write_graph=False, write_images=False),
         ]
         model = eval(params['model'])(params)
-        print "model summary"
+        print ("model summary")
         model.summary()
         model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],validation_split=0.33,callbacks=callbacks)
                   # validation_data=(test_x, test_y), callbacks=callbacks)
@@ -218,7 +225,7 @@ def ntrain_model2(mstr, start, end, step=30):
         if params['catf'] == 'noncatf':
             return None
         else:
-            print '使用最优模型进行预测: S='+start_str
+            print ('使用最优模型进行预测: S='+start_str)
             model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
             proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
 
@@ -240,13 +247,13 @@ def ntrain_model2(mstr, start, end, step=30):
             end_dt1 = end_dt1 + timedelta(step)
     i=0
     while i<len(result_date):
-        print '================'+result_date[i]+'=================='
-        print_dist(result_data[i], params['outdim'], labelcol, 2)
-        print_dist(result_data[i], params['outdim'], labelcol, 10)
+        print ('================'+result_date[i]+'==================')
+        print_dist(result_data[i], params['outdim']-1, labelcol, 2)
+        print_dist(result_data[i], params['outdim']-1, labelcol, 10)
         # print_dist_cut(result_data[i], params['outdim'], labelcol, 20)
         i+=1
 
-    print "[ End train model ]"
+    print ("[ End train model ]")
 
 def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None):
     print ("[ valid model: %s ]... with data from %s to %s"%(mstr,start, end))
@@ -255,7 +262,7 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
     if run is not None:
         path = path + '/' + run
     model = load_model(path+'/best_model.h5',custom_objects=params['cmetrics'])
-    print "model summary"
+    print ("model summary")
     model.summary()
 
     labcol_map = {'close': -3, 'min': -2, 'max': -1}
@@ -264,7 +271,7 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
     dataset = ncreate_dataset(days=params['lookback'], start=start, end=end, ktype=params['ktype'])
     bs, ts, lb_v = create_feeddata(dataset)
     y = eval(params['catf'])(lb_v[:, labelcol])
-    sz = len(y)/params['batch_size'] * params['batch_size']
+    sz = len(y)//params['batch_size'] * params['batch_size']
     x = ts[:sz]
     y = y[:sz]
     lb_v = lb_v[:sz]
@@ -279,7 +286,7 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
     if not __debug__:
         np.savetxt(path + "/best_model."+start+"."+end+".txt", sortout, fmt='%f')
     else:
-        print sortout[0:200, :]
+        print (sortout[0:200, :])
 
     print ("[ End validate model: %s ]... " % (mstr))
     # return sortout
@@ -288,7 +295,7 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
 def predict_batch():
     file = os.path.realpath(__file__)
     os.chdir(os.path.dirname(file))
-    print os.path.dirname(file)
+    print (os.path.dirname(file))
     path = "./models/confirm/"
     for model in os.listdir(path):
         if os.path.isdir(path+model):
@@ -313,19 +320,19 @@ def predict_today(mstr, path='./models/'):
         dt = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
         np.savetxt(path + params['model_name'] + "/"+dt+"_result.txt", sortout, fmt='%f')
     else:
-        print sortout[0:20, :]
+        print (sortout[0:20, :])
 
     idx = params['outdim'] - 1
     sortout = sortout[sortout[:,idx]>=0.5][:,(idx+1, -4, idx)]
     candidates = pd.DataFrame(sortout, columns=('code','price', 'proba'))
-    print "[ End prediction ] of tomorrow's price"
+    print ("[ End prediction ] of tomorrow's price")
     return candidates
 
 
 def print_model(mstr):
     params = parse_params(mstr)
     model = load_model('./models/'+params['model_name']+'/best_model.h5',custom_objects=params['cmetrics'])
-    print "model summary"
+    print ("model summary")
     model.summary()
     plot_model(model, to_file='model.png', show_shapes=True, show_layer_names=True)
 
@@ -339,7 +346,7 @@ def print_dist(proba, sortcol, labelcol, b=10.0):
     bins = np.arange(0, 1, 1/float(b))
     labels = bins.searchsorted(proba[:, sortcol])
     grouped = pd.Series(proba[:, labelcol]).groupby(labels)
-    print grouped.apply(get_stats).unstack()
+    print (grouped.apply(get_stats).unstack())
     if dir is not None:
         pass
         # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv("./models/" + dir + "/dist.txt")
@@ -350,7 +357,7 @@ def print_dist_cut(proba, sortcol, labelcol, b=10.0,dir=None):
     # print mean p_change of the proba result
     factor = pd.cut(proba[:, sortcol],b)
     grouped = pd.Series(proba[:, labelcol]).groupby(factor)
-    print grouped.apply(get_stats).unstack()
+    print (grouped.apply(get_stats).unstack())
     if dir is not None:
         # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv(dir + "/dist.txt")
         pass
