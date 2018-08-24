@@ -116,12 +116,12 @@ def nbuild_model(params):
     rows = params['lookback']
 
     model = Sequential()
-    model.add(Conv2D(32,(2,2), strides=(2, 2),input_shape=(rows, cols, channels),data_format = 'channels_last'))
+    model.add(Conv2D(16,(2,2), strides=(2, 2),input_shape=(rows, cols, channels),data_format = 'channels_last'))
     # model.add(AveragePooling2D(pool_size=2, strides=2))
     model.add(Dropout(0.5))
     model.add(Activation('relu'))
-    # model.add(Conv2D(8,(2,2),data_format='channels_last',padding="same"))
-    # model.add(Dropout(0.5))
+    model.add(Conv2D(8,(2,2),data_format='channels_last',padding="same"))
+    model.add(Dropout(0.5))
     model.add(Flatten())
     model.add(Dense(8, activation='tanh'))
     model.add(Dropout(0.5))

@@ -85,15 +85,16 @@ def ntrain_model(mstr, start, mid, end):
     train_x = tstrain
     train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
     train_y, train_x, non = balance_data(train_y, train_x)
+    #
+    # sz = len(train_y)//params['batch_size'] * params['batch_size']
+    # train_x = train_x[:sz]
+    # train_y = train_y[:sz]
 
-    sz = len(train_y)//params['batch_size'] * params['batch_size']
-    train_x = train_x[:sz]
-    train_y = train_y[:sz]
-
-    test_x = tstest
-    test_y = eval(params['catf'])(lbtest_v[:,labelcol])
-    test_y_v = lbtest_v
-    balance_data(test_y, test_x)
+    sz = len(lbtest_v) // params['batch_size'] * params['batch_size']
+    test_x = tstest[:sz]
+    test_y = eval(params['catf'])(lbtest_v[:sz,labelcol])
+    test_y_v = lbtest_v[:sz]
+    # balance_data(test_y, test_x)
 
     params['indim'] = train_x.shape[- 1]
 
@@ -125,16 +126,6 @@ def ntrain_model(mstr, start, mid, end):
     if params['catf'] == 'noncatf':
         return None
     else:
-        # print '使用最终模型进行预测'
-        # proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-        #
-        # out = np.hstack([proba, test_y_v])
-        # sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
-        # if not __debug__:
-        #     np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
-        #
-        # print_dist_cut(sortout, proba.shape[-1]-1,labelcol,20,mstr)
-
         print ('使用最优模型进行预测')
         model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
         proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
@@ -170,6 +161,7 @@ def ntrain_model2(mstr, start, end, step=30):
     else:
         patience = 1000
 
+    step = int(step)
     start_dt = datetime.datetime.strptime(start, '%Y-%m-%d')
     end_dt = datetime.datetime.strptime(end, '%Y-%m-%d')
     mid_dt = start_dt + timedelta(step)
@@ -207,7 +199,8 @@ def ntrain_model2(mstr, start, end, step=30):
 
         params['indim'] = train_x.shape[- 1]
 
-        logdir =datetime.datetime.now().strftime(path_m+'/S'+start_str)
+        logdir = datetime.datetime.now().strftime(path + '/S' + start + '.%Y%m%d.%H.%M.%S.run')
+        if not os.path.exists(logdir): os.makedirs(logdir)
         path = logdir
 
         callbacks = [
