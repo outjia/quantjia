@@ -6,7 +6,7 @@ import numpy as np
 from DataManager import *
 import keras.backend as K
 from keras.regularizers import l1, l1_l2, l2
-from keras.layers import Dense, Activation, GRU, Dropout, SimpleRNN, LSTM
+from keras.layers import Dense, Activation, GRU, Dropout, GRUCell
 # from keras.metrics import
 from keras.models import Sequential, save_model
 from keras.callbacks import EarlyStopping, ModelCheckpoint
@@ -100,7 +100,8 @@ def tpfn_metrics(y_true, y_pred):
         'false_positive': fp,
     }
 
-def nbuild_model(params):
+
+def nbuild_rmodel(params):
     """
     The function builds a keras Sequential model
     :param lookback: number of previous time steps as int
@@ -116,13 +117,12 @@ def nbuild_model(params):
     knum = 240/int(params['ktype'])
 
     model = Sequential()
-    model.add(GRU(64,
+    model.add(GRU(32,
                   activation='tanh',
-                  batch_input_shape=(batch_size, lookback, knum ,input_dim),
-                  stateful=True,
+                  batch_input_shape=(batch_size, lookback*knum,input_dim),
                   return_sequences=False))
     model.add(Dropout(0.5))
-    model.add(Dense(16, activation='tanh'))
+    model.add(Dense(8, activation='tanh'))
     model.add(Dropout(0.5))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
@@ -132,7 +132,7 @@ def nbuild_model(params):
     return model
 
 
-def build_model(params):
+def build_rmodel(params):
     """
     The function builds a keras Sequential model
     :param lookback: number of previous time steps as int
