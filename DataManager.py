@@ -22,6 +22,7 @@ from datetime import date
 from datetime import timedelta
 from sklearn import preprocessing
 import keras.backend as K
+from business_calendar import Calendar
 
 from keras.utils import np_utils
 
@@ -30,10 +31,37 @@ ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixe
              'npr', 'holders']
 bfeatures = ['pe', 'outstanding', 'reservedPerShare', 'esp', 'bvps', 'pb', 'perundp', 'rev', 'profit',
              'gpr', 'npr']
-tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover','idx_change']
+tsfeatures = ['open', 'high', 'close', 'low', 'p_change', 'turnover', 'idx_change']
 tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
-st_cat = {'sme':'399005','gem':'399006','hs300s':'000300', 'sz50s':'000016', 'zz500s':'000008'}
+st_cat = {'sme': '399005', 'gem': '399006', 'hs300s': '000300', 'sz50s': '000016', 'zz500s': '000008'}
+hdays = ['2013-01-01', '2013-01-02', '2013-01-03', '2013-05-01', '2013-05-02', '2013-05-03', '2013-10-01', '2013-10-02', '2013-10-03', '2013-10-04', '2013-10-05', '2013-10-06',
+            '2013-10-07',
+            '2014-01-01', '2014-01-02', '2014-01-03', '2014-05-01', '2014-05-02', '2014-05-03', '2014-10-01', '2014-10-02', '2014-10-03', '2014-10-04', '2014-10-05', '2014-10-06',
+            '2014-10-07',
+            '2015-01-01', '2015-01-02', '2015-01-03', '2015-05-01', '2015-05-02', '2015-05-03', '2015-10-01', '2015-10-02', '2015-10-03', '2015-10-04', '2015-10-05', '2015-10-06',
+            '2015-10-07',
+            '2016-01-01', '2016-01-02', '2016-01-03', '2016-05-01', '2016-05-02', '2016-05-03', '2016-10-01', '2016-10-02', '2016-10-03', '2016-10-04', '2016-10-05', '2016-10-06',
+            '2016-10-07',
+            '2017-01-01', '2017-01-02', '2017-01-03', '2017-05-01', '2017-05-02', '2017-05-03', '2017-10-01', '2017-10-02', '2017-10-03', '2017-10-04', '2017-10-05', '2017-10-06',
+            '2017-10-07',
+            '2017-01-01', '2018-01-02', '2018-01-03', '2018-05-01', '2018-05-02', '2018-05-03', '2018-10-01', '2018-10-02', '2018-10-03', '2018-10-04', '2018-10-05', '2018-10-06',
+            '2018-10-07',
+            '2019-01-01', '2019-01-02', '2019-01-03', '2019-05-01', '2019-05-02', '2019-05-03', '2019-10-01', '2019-10-02', '2019-10-03', '2019-10-04', '2019-10-05', '2019-10-06',
+            '2019-10-07',
+            '2020-01-01', '2020-01-02', '2020-01-03', '2020-05-01', '2020-05-02', '2020-05-03', '2020-10-01', '2020-10-02', '2020-10-03', '2020-10-04', '2020-10-05', '2020-10-06',
+            '2020-10-07'
+            ]
+
+
+def next_n_busday(date, n):
+    cal = Calendar(holidays = hdays)
+    return cal.addbusdays(date, n)
+
+
+def isbusday(date):
+    cal = Calendar()
+    return cal.isbusday(date)
 
 
 def mydate(datestr):
@@ -44,7 +72,7 @@ def mydate(datestr):
         return datelist
     else:
         datearr = datestr.split('-')
-        if len(datearr) !=3: raise "Wrong date string format " + datestr
+        if len(datearr) != 3: raise "Wrong date string format " + datestr
         return date(int(datearr[0]), int(datearr[1]), int(datearr[2]))
 
 
@@ -55,7 +83,7 @@ def intdate(dt):
             intdatelist.append(intdate(d))
         return intdatelist
     else:
-        return dt.year*10000+dt.month*100+dt.day
+        return dt.year * 10000 + dt.month * 100 + dt.day
 
 
 def intstr(ints):
@@ -73,22 +101,24 @@ def int2str(ints):
     if isinstance(ints, list) or isinstance(ints, np.ndarray):
         lst = []
         for i in ints:
-            lst.append(sb[0:6-len(str(int(i)))] + str(i))
+            lst.append(sb[0:6 - len(str(int(i)))] + str(i))
         return lst
     else:
-        return sb[0:6-len(str(int(ints)))] + str(int(ints))
+        return sb[0:6 - len(str(int(ints)))] + str(int(ints))
 
 
 def minmax_scale(arr):
     mi = np.min(arr)
     mx = np.max(arr)
-    arr = (arr-mi)/(mx-mi+K.epsilon())+K.epsilon()
+    arr = (arr - mi) / (mx - mi + K.epsilon()) + K.epsilon()
     return arr
+
 
 def pricechange_scale(arr):
     mi = np.min(arr)
-    arr = (arr-mi)/(mi+K.epsilon())*100
+    arr = (arr - mi) / (mi + K.epsilon()) * 100
     return arr
+
 
 def catf2(data):
     data_y = data.copy()
@@ -97,6 +127,17 @@ def catf2(data):
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
     return data_y
+
+
+def catf22(data):
+    # 对low进行预测
+    data_y = data.copy()
+    data_y[data_y <= 1] = 31
+    data_y[data_y < 31] = 32
+    data_y -= 31
+    data_y = np_utils.to_categorical(data_y, 2)
+    return data_y
+
 
 def catf3(data):
     data_y = data.copy()
@@ -107,14 +148,30 @@ def catf3(data):
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
 
+
+def catf22(data):
+    # 对low进行预测
+    data_y = data.copy()
+    data_y[data_y <= 1] = 31
+    data_y[data_y < 31] = 32
+    data_y -= 31
+    data_y = np_utils.to_categorical(data_y, 2)
+    return data_y
+
+
 def catf31(data):
     data_y = data.copy()
-    data_y[data_y < 0.5] = 31
+    data_y[data_y < 0.1] = 31
     data_y[data_y < 3] = 32
     data_y[data_y < 30] = 33
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 3)
     return data_y
+
+
+def noncatf(data):
+    return data / 10
+
 
 def catf4(data):
     data_y = data.copy()
@@ -144,7 +201,7 @@ def plot_out(sortout, x_index, y_index, points=200):
 
 
 def test_plot(mstr):
-    d = np.loadtxt("./models/"+mstr+"/2017_02_2_result.txt")
+    d = np.loadtxt("./models/" + mstr + "/2017_02_2_result.txt")
     plot_out(d, 2, 3)
 
 
@@ -154,13 +211,13 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False):
 
     edate = datetime.date.today() - timedelta(days=1)
     edate = edate.strftime('%Y-%m-%d')
-    path = './data/k'+ktype+'_data/'
-    if not os.path.exists(path+edate):
+    path = './data/k' + ktype + '_data/'
+    if not os.path.exists(path + edate):
         if not os.path.exists(path):
             os.mkdir(path)
         os.system('touch ' + path + edate)
     elif not force:
-        print ("[ refresh_kdata ]... using existing data in "%(path))
+        print ("[ refresh_kdata ]... using existing data in " % (path))
         return
 
     print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
@@ -169,7 +226,7 @@ def refresh_kdata(start='2010-01-01', ktype='5', force=False):
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
 
-    symbols = list(basics.index)+list(index.code)
+    symbols = list(basics.index) + list(index.code)
     for symb in symbols:
         try:
             df = ts.get_k_data(symb, start, edate, ktype=ktype)
@@ -226,7 +283,7 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
         i = 0
         while i < len(symbs):
             try:
-                df = ts.get_k_data(symbs[i], start,edate)
+                df = ts.get_k_data(symbs[i], start, edate)
             except:
                 failsymbs.append(symbs[i])
                 print "Exception when processing " + symbs[i]
@@ -236,8 +293,8 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
 
             if df is not None and len(df) > 0:
                 outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
-                df['p_change'] = df['close'].diff()/df['close'].shift(1) * 100
-                df['turnover'] = df['volume']/outstanding * 100
+                df['p_change'] = df['close'].diff() / df['close'].shift(1) * 100
+                df['turnover'] = df['volume'] / outstanding * 100
                 df = df.fillna(K.epsilon())
                 df.to_csv(data_path + symbs[i] + '.csv')
                 df.to_csv('./data/daily/' + symbs[i] + '.csv')
@@ -251,6 +308,7 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
                 trymore(failsymbs, times)
             else:
                 return
+
     trymore(symbols, trytimes)
 
     # 增加指数K线数据
@@ -262,7 +320,6 @@ def refresh_data(start='2005-01-01', trytimes=10, force=False):
             df['turnover'] = minmax_scale(np.array(df['volume']))
             df.to_csv(data_path + symb + '.csv')
             df.to_csv('./data/daily/' + symb + '.csv')
-
 
     print "获取指数成分股列表"
     clist = ts.get_sme_classified()
@@ -299,7 +356,7 @@ def get_basic_data(online=False, cache=True):
 
 
 def get_index_list(m):
-    listfile = './data/'+ m +'.csv'
+    listfile = './data/' + m + '.csv'
     return pd.read_csv(listfile, index_col=0, dtype={'code': str})
 
 
@@ -309,7 +366,7 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index=None):
     # refresh_data()
     basics = get_basic_data()
 
-    if index is not None :
+    if index is not None:
         index_list = get_index_list(index)
         symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
         idx_df = pd.read_csv('./data/daily/' + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
@@ -330,14 +387,14 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index=None):
         try:
             df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='datetime', dtype={'code': str})
             if df is not None:
-                if index is not None: df = df.iloc[:,1:].join(idx_df)
+                if index is not None: df = df.iloc[:, 1:].join(idx_df)
                 data_dict[symbols[i]] = df.loc[start:end]
         except:
             if __debug__:
                 print "Can't get data for symbol:" + str(symbols[i])
             else:
                 traceback.print_exc()
-                print("%i, %i, %i"%(i,symb_num, len(symbols)))
+                print("%i, %i, %i" % (i, symb_num, len(symbols)))
         i += 1
     print ("[ End get history data ]")
     return data_dict
@@ -346,10 +403,12 @@ def get_history_data(symb_num, totals=None, start=None, end=None, index=None):
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    features = ['open', 'close', 'high', 'low',  'tor']#, 'vr']
+    features = ['open', 'close', 'high', 'low', 'tor']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
-    start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    start = next_n_busday(sdate, -days - 1).strftime('%Y-%m-%d')
+    end = next_n_busday(end, 3).strftime('%Y-%m-%d')
     path = './data/k' + ktype + '_data/'
 
     symbols = []
@@ -357,9 +416,20 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
         basics = get_basic_data()
         symbols = int2str(list(basics.index))
     else:
-        for i in index:
-            symbols.extend(list(get_index_list(i).code))
-        # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+        # for i in index:
+        #     symbols.extend(list(get_index_list(i).code))
+        basics = get_basic_data()
+        all = list(basics.index)
+        if 'basic' in index:
+            symbols.extend([x for x in all if x >= 600000])
+        if 'sme' in index:
+            symbols.extend([x for x in all if 300000 <= x < 600000])
+        if 'gem' in index:
+            symbols.extend([x for x in all if 300000 > x])
+        symbols = int2str(symbols)
+        if 'debug' in index:
+            symbols.extend(list(get_index_list('debug').code))
+    # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
 
     knum = 240 // int(ktype)
 
@@ -372,6 +442,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                 df = df.iloc[0:int(len(df) // knum * knum)]
                 df.fillna(method='bfill')
                 df.fillna(method='ffill')
+                df.ix[:, 'vr'].fillna(value=1.0)
                 if index is not None: df = df  # .join(idx_df)
 
             dclose = np.array(df.ix[-knum::-knum, 'close'])
@@ -386,7 +457,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             continue
 
         # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
-        for i in range(1, len(df) // knum - days):
+        for i in range(1, len(df) // knum - days - 1):
             nowcell = np.array(datall[i * knum:(i + days) * knum])
 
             # 当天涨停，无法进行买入操作，删除此类案例
@@ -395,12 +466,14 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
 
             # nowcell里的最后一个收盘价
             nowclose = nowcell[-1, 1]
+            nxt2close = datall[(i + days + 2) * knum - 1, 1]
 
             nxtcell = np.array(datall[(i + days) * knum:(i + days + 1) * knum])
             max_price = min((max(nxtcell[:, 2]) - nowclose) / nowclose * 100, 10)
             min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
             cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
             c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
+            cls2price = (nxt2close - nowclose) / nowclose * 100
 
             # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
             # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
@@ -414,7 +487,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                 continue
 
             # 过去days天股价变化总和，范围[-10*days, +10*days]
-            pchange_days = float(nowcell[-1, 1] * 10)
+            pchange_days = cls2price
 
             try:
                 j = 4
@@ -422,14 +495,16 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                     # 归一化成交量
                     nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
                     j = j + 1
-                # if 'tor' in features:
-                #     # 归一化换手率
-                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
-                #     j = j + 1
-                # if 'vr' in features:
-                #     # 归一化量比
-                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                if 'tor' in features:
+                    # 归一化换手率
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    j = j + 1
+                if 'vr' in features:
+                    # 归一化量比
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
             except:
+                if __debug__:
+                    traceback.print_exc()
                 pass
 
             # reshape to [days, knum, cols]
@@ -462,10 +537,10 @@ def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
     returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
     """
 
-    print ("[ create_dataset]... look_back:%s"%lookback)
+    print ("[ create_dataset]... look_back:%s" % lookback)
 
-    sdate = datetime.datetime.strptime(start,'%Y-%m-%d')
-    start = (sdate - timedelta(days=lookback/5*2+lookback)).strftime('%Y-%m-%d')
+    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = (sdate - timedelta(days=lookback / 5 * 2 + lookback)).strftime('%Y-%m-%d')
 
     data_all = []
     bsset = get_basic_data()[bfeatures]
@@ -486,15 +561,16 @@ def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
 
         ndata_stock = np.array(data_stock)
         for i in range(len(ndata_stock) - lookback - 2):
-            if ndata_stock[i+lookback-1,-3] > 9.94:
+            if ndata_stock[i + lookback - 1, -3] > 9.94:
                 continue  # clean data un-operational
             dtcell = ndata_stock[i:(i + lookback)]
             ohcl = minmax_scale(dtcell[:, 0:4])
-            pchange = p_change[i:(i + lookback)].reshape(-1,1)/10
-            turnover = minmax_scale(dtcell[:,-2]).reshape(-1,1)
+            pchange = p_change[i:(i + lookback)].reshape(-1, 1) / 10
+            turnover = minmax_scale(dtcell[:, -2]).reshape(-1, 1)
             # 应该直对testcase进行normalization
-            tsdata = np.hstack([datecol[i:i+lookback], ohcl, pchange, turnover])+K.epsilon()
-            lbdata = np.hstack([[int(symb)], datecol[i+lookback], p_change[i+lookback-1:i+lookback+3],sum(idx_change[i+lookback:i+lookback+2]), sum(p_change[i+lookback:i+lookback+2])])
+            tsdata = np.hstack([datecol[i:i + lookback], ohcl, pchange, turnover]) + K.epsilon()
+            lbdata = np.hstack([[int(symb)], datecol[i + lookback], p_change[i + lookback - 1:i + lookback + 3], sum(idx_change[i + lookback:i + lookback + 2]),
+                                sum(p_change[i + lookback:i + lookback + 2])])
             data_cell = [bsdata, tsdata, lbdata]
             data_all.append(data_cell)
     print "[ Finish create data set]"
@@ -502,7 +578,7 @@ def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
 
 
 def get_newly_data(days=300):
-    print ("[ get newly data]... for %s days"%(str(days)))
+    print ("[ get newly data]... for %s days" % (str(days)))
 
     start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
     end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -560,11 +636,11 @@ def create_today_dataset(lookback=5):
 
         tsdata_df = tsdata_dict[symb]
         if len(tsdata_df) >= lookback - 1:
-            ndata_stock = np.array(tsdata_df[1-lookback:])
+            ndata_stock = np.array(tsdata_df[1 - lookback:])
             ndata_stock = np.vstack([ndata_stock, rtdata_v[1:]])
 
-            p_change = ndata_stock[:,-2].reshape(-1, 1) / 10
-            turnover = minmax_scale(ndata_stock[:,-1].reshape(-1, 1))
+            p_change = ndata_stock[:, -2].reshape(-1, 1) / 10
+            turnover = minmax_scale(ndata_stock[:, -1].reshape(-1, 1))
             ohcl = minmax_scale(ndata_stock[:, 0:4])
             tsdata = np.hstack([ohcl, p_change, turnover])
             tsdataset.append(tsdata)
@@ -625,13 +701,13 @@ def create_feeddata(dataset):
 
 def balance_data(data_y, data_x, data_x2=None):
     # 对于数据倾斜（数据类别不平衡），此函数对少数类的样本进行复制，以消除类别的不平衡
-    a = np.sum(data_y,axis=0)
+    a = np.sum(data_y, axis=0)
     print "Category distribution before balancing"
     print a
-    b = np.max(a)/(a)
+    b = np.max(a) / (a)
     c = long(np.sum(a * b))
-    data_xx = np.zeros([c]+list(data_x.shape[1:]))
-    data_yy = np.zeros([c]+list(data_y.shape[1:]))
+    data_xx = np.zeros([c] + list(data_x.shape[1:]))
+    data_yy = np.zeros([c] + list(data_y.shape[1:]))
     data_xx2 = None
     if data_x2 is not None:
         data_xx2 = np.zeros([c] + list(data_x2.shape[1:]))
@@ -645,8 +721,9 @@ def balance_data(data_y, data_x, data_x2=None):
                 data_xx2[l] = data_x2[i]
             l += 1
     print "Category distribution after balancing"
-    print np.sum(data_yy,axis=0)
+    print np.sum(data_yy, axis=0)
     return data_yy, data_xx, data_xx2
+
 
 def main():
     # data = create_dataset(['601866'])
@@ -682,17 +759,19 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    # refresh_kdata(force=True)
-    ncreate_dataset(start='2016-01-01')
+    refresh_kdata(force=True)
+    # ncreate_dataset(start='2016-01-01')
+
+
 #     get_history_data(4000, start='2005-01-01', end=None, index=None)
 # #    get_newly_data2('2016-01-01', 10)
 #    pass
 
-    # arr = np.arange(12).reshape(3,4)
-    # print arr
-    # a = minmax_scale(arr)
-    # print a
-    # print arr
+# arr = np.arange(12).reshape(3,4)
+# print arr
+# a = minmax_scale(arr)
+# print a
+# print arr
 
 if __name__ == '__main__':
     main()
