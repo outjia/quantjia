@@ -177,7 +177,7 @@ def catf22(data):
 
 
 def noncatf(data):
-    return data
+    return data/10
 
 
 def plot_out(sortout, x_index, y_index, points=200):
@@ -293,7 +293,7 @@ def get_index_list(m):
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    features = ['open', 'close', 'high', 'low',  'tor']#, 'vr']
+    features = ['open', 'close', 'high', 'low', 'tor']#, 'vr']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
     start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
@@ -318,6 +318,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                 df = df[end:start]
                 df = df.iloc[0:int(len(df) // knum * knum)]
                 df.fillna(method='bfill')
+                df.ix[:,'vr'].fillna(value=1.0)
                 df.fillna(method='ffill')
                 if index is not None: df = df  # .join(idx_df)
 
@@ -369,13 +370,123 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                     # 归一化成交量
                     nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
                     j = j + 1
-                # if 'tor' in features:
-                #     # 归一化换手率
-                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
-                #     j = j + 1
-                # if 'vr' in features:
-                #     # 归一化量比
-                #     nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                if 'tor' in features:
+                    # 归一化换手率
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    j = j + 1
+                if 'vr' in features:
+                    # 归一化量比
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+            except:
+                pass
+
+            # reshape to [days, knum, cols]
+            nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
+
+            if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
+                print ('*' * 50)
+                print (lbdata)
+                print ('*' * 50)
+                continue
+
+            bsdata = np.array(intdate(mydate(ddate[i + days].split(' ')[0])))
+
+            # lbadata [日期，股票代码，最低价，最高价,pchange_days, c2o, cls, min, max]
+            lbdata = [intdate(mydate(ddate[i + days].split(' ')[0])), int(symb), min(nxtcell[:, 3]), max(nxtcell[:, 2]), pchange_days, c2o_price, cls_price, min_price, max_price]
+
+            data_cell = [bsdata, nowcell, np.array(lbdata)]
+            data_all.append(data_cell)
+    print ("[ Finish create data set]")
+    return data_all
+
+
+def ncreate_dataset_online(index=None, days=3, start=None, end=None, ktype='5'):
+    print ("[ create_dataset_online]... of stock category %s with previous %i days" % (index, days))
+
+    features = ['open', 'close', 'high', 'low', 'tor']#, 'vr']
+
+    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
+    path = './data/k' + ktype + '_data/'
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
+        # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+
+    knum = 240 // int(ktype)
+
+    data_all = []
+    for symb in symbols:
+        try:
+            df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
+            if df is not None and len(df) > 0:
+                df = df[end:start]
+                df = df.iloc[0:int(len(df) // knum * knum)]
+                df.fillna(method='bfill')
+                df.ix[:,'vr'].fillna(value=1.0)
+                df.fillna(method='ffill')
+                if index is not None: df = df  # .join(idx_df)
+
+            dclose = np.array(df.ix[-knum::-knum, 'close'])
+            ddate = df.index[-knum::-knum]
+            datall = np.array(df.ix[::-1, features])
+        except:
+            if __debug__:
+                traceback.print_exc()
+            else:
+                # print "Can't get data for symbol:" + str(symb)
+                pass
+            continue
+
+        # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
+        for i in range(1, len(df) // knum - days):
+            nowcell = np.array(datall[i * knum:(i + days) * knum])
+
+            # 当天涨停，无法进行买入操作，删除此类案例
+            if (dclose[i + days - 1] - dclose[i + days - 2]) / dclose[i + days - 2] > 0.099:
+                continue
+
+            # nowcell里的最后一个收盘价
+            nowclose = nowcell[-1, 1]
+
+            nxtcell = np.array(datall[(i + days) * knum:(i + days + 1) * knum])
+            max_price = min((max(nxtcell[:, 2]) - nowclose) / nowclose * 100, 10)
+            min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
+            cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
+            c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
+
+            # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
+            # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
+
+            # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+            for k in range(days):
+                nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[i + k - 1]) / dclose[i + k - 1] * 10 + K.epsilon()
+
+            # 异常数据，跳过
+            if abs(nowcell[:, 0:4].any()) > 1.1:
+                continue
+
+            # 过去days天股价变化总和，范围[-10*days, +10*days]
+            pchange_days = float(nowcell[-1, 1] * 10)
+
+            try:
+                j = 4
+                if 'vol' in features:
+                    # 归一化成交量
+                    nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                    j = j + 1
+                if 'tor' in features:
+                    # 归一化换手率
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    j = j + 1
+                if 'vr' in features:
+                    # 归一化量比
+                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
             except:
                 pass
 
