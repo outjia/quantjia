@@ -376,6 +376,129 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     return data_all
 
 
+def ncreate_today_dataset_rnn(index=None, days=3, ktype='5', online=True, today=False):
+    pass
+
+
+def ncreate_today_dataset_cnn(index=None, days=3, ktype='5', online=True, today=False):
+    print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
+
+    start_time = datetime.datetime.now()
+
+    print (start_time)
+
+    features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
+
+    start = (datetime.date.today() - timedelta(days=days + 8)).strftime('%Y-%m-%d')
+    path = './data/k' + ktype + '_data/'
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
+
+    knum = 240 // int(ktype)
+
+    data_all = []
+    count = 0
+    for symb in symbols:
+        count = count + 1
+        try:
+            if online is True:
+                try:
+                    df = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
+                    length = len(df)
+                    if df is not None and length > knum * (days + 1):
+                        df = df[df['date'] > start]
+                        df = df.set_index('date')
+                        residual = length % knum
+                        if residual > 0:
+                            for i in range(knum - residual):
+                                df = df.append(df.iloc[-1:])
+
+                        # 近日复牌或停牌数据，跳过
+                        if len(df) < knum * (days + 1):
+                            continue
+
+                        df = df.iloc[-int((days + 1) * knum):]
+                        df.fillna(method='bfill')
+                        df.fillna(method='ffill')
+                        if index is not None: df = df  # .join(idx_df)
+
+                        dclose = np.array(df.ix[knum - 1::knum, 'close'])
+                        # 当天涨停，无法进行买入操作，删除此类案例
+                        if (dclose[days] - dclose[days - 1]) / dclose[days - 1] > 0.099:
+                            continue
+                        ddate = df.index[::knum]
+                        datall = np.array(df.ix[:, features])
+                    else:
+                        continue
+                    # df = df.reindex(index=df.date,columns=features)
+                except:
+                    print ("Exception when processing index:" + symb)
+                    traceback.print_exc()
+                    continue
+            else:
+                df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
+        except:
+            if __debug__:
+                traceback.print_exc()
+            else:
+                # print "Can't get data for symbol:" + str(symb)
+                pass
+            continue
+
+        nowcell = datall[knum:(1 + days) * knum]
+
+        # nowcell里的最后一个收盘价
+        nowclose = nowcell[-1, 1]
+
+        # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+        for k in range(days):
+            nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
+
+        # 异常数据，跳过
+        if abs(nowcell[:, 0:4].any()) > 1.1:
+            continue
+
+        try:
+            j = 4
+            if 'volume' in features:
+                # 归一化成交量
+                nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                j = j + 1
+            if 'tor' in features:
+                # 归一化换手率
+                nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                j = j + 1
+            if 'vr' in features:
+                # 归一化量比
+                nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+        except:
+            pass
+
+        # reshape to [days, knum, cols]
+        nowcell = nowcell.reshape(nowcell.shape[0] / knum, knum, nowcell.shape[-1])
+
+        bsdata = np.array(int(symb))
+        high = float(max(df.ix[:-48, 'high']))
+        open = float(df.ix[-48, 'open'])
+        close = float(df.ix[-1, 'close'])
+        low = float(min(df.ix[:-48, 'low']))
+        # lbdata=[date, code, open, high, close, low]
+        ldata = [intdate(mydate(ddate[days].split(' ')[0])), int(symb), open, high, close, low]
+
+        data_cell = [bsdata, nowcell, np.array(ldata)]
+        data_all.append(data_cell)
+
+    end_time = datetime.datetime.now()
+    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
+    print (end_time)
+    return data_all
+
 def get_newly_kdata(ktype='5',days=30, inc=True):
     print ("[ get newly kdata]... for %s days"%(str(days)))
 
