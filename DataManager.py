@@ -8,23 +8,21 @@
 # get_finance_data([synbols])
 
 
+import datetime
 import os
 import time
 import traceback
+from datetime import date
+from datetime import timedelta
 
-import datetime
-import h5py
+import keras.backend as K
 import matplotlib as plt
 import numpy as np
 import pandas as pd
 import tushare as ts
-from datetime import date
-from datetime import timedelta
-from sklearn import preprocessing
-import keras.backend as K
 from business_calendar import Calendar
-
 from keras.utils import np_utils
+from sklearn import preprocessing
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
              'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
@@ -36,26 +34,26 @@ tfeatures = ['open', 'high', 'close', 'low', 'p_change']  # , 'volume']
 
 st_cat = {'sme': '399005', 'gem': '399006', 'hs300s': '000300', 'sz50s': '000016', 'zz500s': '000008'}
 hdays = ['2013-01-01', '2013-01-02', '2013-01-03', '2013-05-01', '2013-05-02', '2013-05-03', '2013-10-01', '2013-10-02', '2013-10-03', '2013-10-04', '2013-10-05', '2013-10-06',
-            '2013-10-07',
-            '2014-01-01', '2014-01-02', '2014-01-03', '2014-05-01', '2014-05-02', '2014-05-03', '2014-10-01', '2014-10-02', '2014-10-03', '2014-10-04', '2014-10-05', '2014-10-06',
-            '2014-10-07',
-            '2015-01-01', '2015-01-02', '2015-01-03', '2015-05-01', '2015-05-02', '2015-05-03', '2015-10-01', '2015-10-02', '2015-10-03', '2015-10-04', '2015-10-05', '2015-10-06',
-            '2015-10-07',
-            '2016-01-01', '2016-01-02', '2016-01-03', '2016-05-01', '2016-05-02', '2016-05-03', '2016-10-01', '2016-10-02', '2016-10-03', '2016-10-04', '2016-10-05', '2016-10-06',
-            '2016-10-07',
-            '2017-01-01', '2017-01-02', '2017-01-03', '2017-05-01', '2017-05-02', '2017-05-03', '2017-10-01', '2017-10-02', '2017-10-03', '2017-10-04', '2017-10-05', '2017-10-06',
-            '2017-10-07',
-            '2017-01-01', '2018-01-02', '2018-01-03', '2018-05-01', '2018-05-02', '2018-05-03', '2018-10-01', '2018-10-02', '2018-10-03', '2018-10-04', '2018-10-05', '2018-10-06',
-            '2018-10-07',
-            '2019-01-01', '2019-01-02', '2019-01-03', '2019-05-01', '2019-05-02', '2019-05-03', '2019-10-01', '2019-10-02', '2019-10-03', '2019-10-04', '2019-10-05', '2019-10-06',
-            '2019-10-07',
-            '2020-01-01', '2020-01-02', '2020-01-03', '2020-05-01', '2020-05-02', '2020-05-03', '2020-10-01', '2020-10-02', '2020-10-03', '2020-10-04', '2020-10-05', '2020-10-06',
-            '2020-10-07'
-            ]
+         '2013-10-07',
+         '2014-01-01', '2014-01-02', '2014-01-03', '2014-05-01', '2014-05-02', '2014-05-03', '2014-10-01', '2014-10-02', '2014-10-03', '2014-10-04', '2014-10-05', '2014-10-06',
+         '2014-10-07',
+         '2015-01-01', '2015-01-02', '2015-01-03', '2015-05-01', '2015-05-02', '2015-05-03', '2015-10-01', '2015-10-02', '2015-10-03', '2015-10-04', '2015-10-05', '2015-10-06',
+         '2015-10-07',
+         '2016-01-01', '2016-01-02', '2016-01-03', '2016-05-01', '2016-05-02', '2016-05-03', '2016-10-01', '2016-10-02', '2016-10-03', '2016-10-04', '2016-10-05', '2016-10-06',
+         '2016-10-07',
+         '2017-01-01', '2017-01-02', '2017-01-03', '2017-05-01', '2017-05-02', '2017-05-03', '2017-10-01', '2017-10-02', '2017-10-03', '2017-10-04', '2017-10-05', '2017-10-06',
+         '2017-10-07',
+         '2017-01-01', '2018-01-02', '2018-01-03', '2018-05-01', '2018-05-02', '2018-05-03', '2018-10-01', '2018-10-02', '2018-10-03', '2018-10-04', '2018-10-05', '2018-10-06',
+         '2018-10-07',
+         '2019-01-01', '2019-01-02', '2019-01-03', '2019-05-01', '2019-05-02', '2019-05-03', '2019-10-01', '2019-10-02', '2019-10-03', '2019-10-04', '2019-10-05', '2019-10-06',
+         '2019-10-07',
+         '2020-01-01', '2020-01-02', '2020-01-03', '2020-05-01', '2020-05-02', '2020-05-03', '2020-10-01', '2020-10-02', '2020-10-03', '2020-10-04', '2020-10-05', '2020-10-06',
+         '2020-10-07'
+         ]
 
 
 def next_n_busday(date, n):
-    cal = Calendar(holidays = hdays)
+    cal = Calendar(holidays=hdays)
     return cal.addbusdays(date, n)
 
 
@@ -170,7 +168,7 @@ def catf31(data):
 
 
 def noncatf(data):
-    return data / 10
+    return data
 
 
 def catf4(data):
@@ -205,146 +203,6 @@ def test_plot(mstr):
     plot_out(d, 2, 3)
 
 
-def refresh_kdata(start='2010-01-01', ktype='5', force=False):
-    # refresh history data using get_k_data
-    # force, force to get_k_data online
-
-    edate = datetime.date.today() - timedelta(days=1)
-    edate = edate.strftime('%Y-%m-%d')
-    path = './data/k' + ktype + '_data/'
-    if not os.path.exists(path + edate):
-        if not os.path.exists(path):
-            os.mkdir(path)
-        os.system('touch ' + path + edate)
-    elif not force:
-        print ("[ refresh_kdata ]... using existing data in " % (path))
-        return
-
-    print ("[ refresh_kdata ]... start date:%s in path %s" % (start, path))
-
-    index = ts.get_index()
-    basics = ts.get_stock_basics()
-    basics.to_csv('./data/basics.csv')
-
-    symbols = list(basics.index) + list(index.code)
-    for symb in symbols:
-        try:
-            df = ts.get_k_data(symb, start, edate, ktype=ktype)
-        except:
-            print "Exception when processing " + symb
-            traceback.print_exc()
-            continue
-        if df is not None and len(df) > 0:
-            df.to_csv(path + symb + '.csv')
-
-    print "获取指数成分股列表"
-    clist = ts.get_sme_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sme.csv')
-
-    clist = ts.get_gem_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/gem.csv')
-
-    clist = ts.get_hs300s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/hs300s.csv')
-
-    clist = ts.get_sz50s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sz50s.csv')
-
-    clist = ts.get_zz500s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/zz500s.csv')
-
-    print ("[ end refresh_data ]")
-
-
-def refresh_data(start='2005-01-01', trytimes=10, force=False):
-    # refresh history data
-    # trytimes, times to try
-
-    edate = datetime.date.today() - timedelta(days=1)
-    edate = edate.strftime('%Y-%m-%d')
-    data_path = './data/' + edate + '/'
-    if not os.path.exists(data_path):
-        os.makedirs(data_path)
-    elif not force:
-        return
-    print ("[ refresh_data ]... start date:%s" % (start))
-    basics = ts.get_stock_basics()
-    basics.to_csv('./data/basics.csv')
-
-    symbols = list(basics.index)
-
-    def trymore(symbs, times):
-        failsymbs = []
-        i = 0
-        while i < len(symbs):
-            try:
-                df = ts.get_k_data(symbs[i], start, edate)
-            except:
-                failsymbs.append(symbs[i])
-                print "Exception when processing " + symbs[i]
-                traceback.print_exc()
-                i += 1
-                continue
-
-            if df is not None and len(df) > 0:
-                outstanding = basics.loc[symbs[i]]['outstanding'] * 100000000
-                df['p_change'] = df['close'].diff() / df['close'].shift(1) * 100
-                df['turnover'] = df['volume'] / outstanding * 100
-                df = df.fillna(K.epsilon())
-                df.to_csv(data_path + symbs[i] + '.csv')
-                df.to_csv('./data/daily/' + symbs[i] + '.csv')
-            else:
-                failsymbs.append(symbs[i])
-            i += 1
-        if len(failsymbs) > 0:
-            print "In round " + str(times) + " following symbols can't be resolved:\n" + str(failsymbs)
-            if times - 1 > 0:
-                times -= 1
-                trymore(failsymbs, times)
-            else:
-                return
-
-    trymore(symbols, trytimes)
-
-    # 增加指数K线数据
-    index = ts.get_index()
-    for symb in list(index.code):
-        df = ts.get_k_data(symb, start, edate)
-        if df is not None and len(df) > 0:
-            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
-            df['turnover'] = minmax_scale(np.array(df['volume']))
-            df.to_csv(data_path + symb + '.csv')
-            df.to_csv('./data/daily/' + symb + '.csv')
-
-    print "获取指数成分股列表"
-    clist = ts.get_sme_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sme.csv')
-
-    clist = ts.get_gem_classified()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/gem.csv')
-
-    clist = ts.get_hs300s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/hs300s.csv')
-
-    clist = ts.get_sz50s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/sz50s.csv')
-
-    clist = ts.get_zz500s()
-    if clist is not None and len(clist) > 0:
-        clist.to_csv('./data/zz500s.csv')
-
-    print ("[ end refresh_data ]")
-
-
 def get_basic_data(online=False, cache=True):
     if online is False:
         basics = pd.read_csv('./data/basics.csv', index_col=0, dtype={'code': str})
@@ -360,50 +218,10 @@ def get_index_list(m):
     return pd.read_csv(listfile, index_col=0, dtype={'code': str})
 
 
-def get_history_data(symb_num, totals=None, start=None, end=None, index=None):
-    print ("[ get history data ]... for %i symbols" % (symb_num))
-    # if symbols is None: return
-    # refresh_data()
-    basics = get_basic_data()
-
-    if index is not None:
-        index_list = get_index_list(index)
-        symbols = list(set(int2str(list(basics.index))).intersection(set(index_list.code)))
-        idx_df = pd.read_csv('./data/daily/' + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
-        idx_df = idx_df['p_change']
-        idx_df.name = 'idx_change'
-    else:
-        symbols = int2str(list(basics.index))
-
-    data_dict = {}
-    i = 0
-    while i < len(symbols) and i < symb_num:
-        # 小市值股票
-        # if totals is not None and basics.iloc[i]['totals'] > totals: i += 1; continue
-
-        # 创业板, 使用index代替硬编码
-        # if not symbols[i].startswith('300'): i +=1; continue
-
-        try:
-            df = pd.read_csv('./data/daily/' + symbols[i] + '.csv', index_col='datetime', dtype={'code': str})
-            if df is not None:
-                if index is not None: df = df.iloc[:, 1:].join(idx_df)
-                data_dict[symbols[i]] = df.loc[start:end]
-        except:
-            if __debug__:
-                print "Can't get data for symbol:" + str(symbols[i])
-            else:
-                traceback.print_exc()
-                print("%i, %i, %i" % (i, symb_num, len(symbols)))
-        i += 1
-    print ("[ End get history data ]")
-    return data_dict
-
-
 def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    features = ['open', 'close', 'high', 'low', 'tor']
+    features = ['open', 'close', 'high', 'low', 'vol']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
     end = datetime.datetime.strptime(end, '%Y-%m-%d')
@@ -442,6 +260,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                 df = df.iloc[0:int(len(df) // knum * knum)]
                 df.fillna(method='bfill')
                 df.fillna(method='ffill')
+                df.fillna(value=0)
                 df.ix[:, 'vr'].fillna(value=1.0)
                 if index is not None: df = df  # .join(idx_df)
 
@@ -497,11 +316,11 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                     j = j + 1
                 if 'tor' in features:
                     # 归一化换手率
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
                     j = j + 1
                 if 'vr' in features:
                     # 归一化量比
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
             except:
                 if __debug__:
                     traceback.print_exc()
@@ -527,128 +346,128 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     return data_all
 
 
-def create_dataset(sym_num, lookback=5, start=None, end=None, totals=None):
-    """
-    The function takes two arguments: the `dataset`, which is a NumPy array that we want to convert into a dataset,
-    and the `lookback`, which is the number of previous time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    symbs
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([np.array(bsdata), tsdata, rtdata, lbdata])
-    """
+def ncreate_today_dataset(index=None, days=3, ktype='5', online=True, force_return=False):
+    print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    print ("[ create_dataset]... look_back:%s" % lookback)
+    start_time = datetime.datetime.now()
 
-    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
-    start = (sdate - timedelta(days=lookback / 5 * 2 + lookback)).strftime('%Y-%m-%d')
+    print (start_time)
+
+    features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
+
+    start = (datetime.date.today() - timedelta(days=days + 8)).strftime('%Y-%m-%d')
+    path = './data/k' + ktype + '_data/'
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
+
+    knum = 240 // int(ktype)
+
+    st_symbols = list(ts.get_st_classified().code)
+    symbols = [i for i in symbols if i not in st_symbols]
 
     data_all = []
-    bsset = get_basic_data()[bfeatures]
-    bsset = bsset[bsset['pb'] > 0]
-    symblist = intstr(list(bsset.index))
-    bsset = preprocessing.scale(bsset)
-    bsset = np.hstack([np.array(symblist).reshape(-1, 1), bsset])
-    stockset = get_history_data(sym_num, totals, start, end)
-    for symb in stockset:
-        if int(symb) not in symblist: continue
-        bsdata = bsset[bsset[:, 0] == int(symb)][0]  # sym,...
-
-        data_stock = stockset[symb][tsfeatures]
-        datelist = mydate(list(data_stock.index))
-        datecol = np.array(intdate(datelist)).reshape(-1, 1)
-        p_change = np.array(data_stock['p_change'].clip(-10, 10))
-        idx_change = np.array(data_stock['idx_change'])
-
-        ndata_stock = np.array(data_stock)
-        for i in range(len(ndata_stock) - lookback - 2):
-            if ndata_stock[i + lookback - 1, -3] > 9.94:
-                continue  # clean data un-operational
-            dtcell = ndata_stock[i:(i + lookback)]
-            ohcl = minmax_scale(dtcell[:, 0:4])
-            pchange = p_change[i:(i + lookback)].reshape(-1, 1) / 10
-            turnover = minmax_scale(dtcell[:, -2]).reshape(-1, 1)
-            # 应该直对testcase进行normalization
-            tsdata = np.hstack([datecol[i:i + lookback], ohcl, pchange, turnover]) + K.epsilon()
-            lbdata = np.hstack([[int(symb)], datecol[i + lookback], p_change[i + lookback - 1:i + lookback + 3], sum(idx_change[i + lookback:i + lookback + 2]),
-                                sum(p_change[i + lookback:i + lookback + 2])])
-            data_cell = [bsdata, tsdata, lbdata]
-            data_all.append(data_cell)
-    print "[ Finish create data set]"
-    return data_all
-
-
-def get_newly_data(days=300):
-    print ("[ get newly data]... for %s days" % (str(days)))
-
-    start = (datetime.date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-    end = (datetime.date.today() - timedelta(days=1)).strftime('%Y-%m-%d')
-    today_file = './data/' + end + '/newlydata.h5'
-    if os.path.exists(today_file):
-        f = h5py.File(today_file, 'r')
-        return f
-
-    basics = ts.get_stock_basics()
-    symbols = int2str(list(basics.index))
-    f = h5py.File(today_file, 'w')
-    i = 0
-    while i < len(symbols):
+    count = 0
+    for symb in symbols:
+        # if st_symbols.index(symb):continue
+        # 超过下午2点58，立即返回，以便后续进行买卖操作
+        if force_return and datetime.datetime.now().time() > datetime.time(14,59,0):
+            break;
+        count = count + 1
         try:
-            df = ts.get_h_data(symbols[i], start, end)
+            if online is True:
+                try:
+                    df = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
+                    length = len(df)
+                    if df is not None and length > knum * (days + 1):
+                        df = df[df['date'] > start]
+                        df = df.set_index('date')
+                        residual = length % knum
+                        if residual > 0:
+                            for i in range(knum - residual):
+                                df = df.append(df.iloc[-1:])
+
+                        # 近日复牌或停牌数据，跳过
+                        if len(df) < knum * (days + 1):
+                            continue
+
+                        df = df.iloc[-int((days + 1) * knum):]
+                        df.fillna(method='bfill')
+                        df.fillna(method='ffill')
+                        if index is not None: df = df  # .join(idx_df)
+
+                        dclose = np.array(df.ix[knum - 1::knum, 'close'])
+                        # 当天涨停，无法进行买入操作，删除此类案例
+                        if (dclose[days] - dclose[days - 1]) / dclose[days - 1] > 0.099:
+                            continue
+                        ddate = df.index[::knum]
+                        datall = np.array(df.ix[:, features])
+                    else:
+                        continue
+                    # df = df.reindex(index=df.date,columns=features)
+                except:
+                    print ("Exception when processing index:" + symb)
+                    traceback.print_exc()
+                    continue
+            else:
+                df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
         except:
-            traceback.print_exc()
-            i += 1
+            if __debug__:
+                traceback.print_exc()
+            else:
+                # print "Can't get data for symbol:" + str(symb)
+                pass
             continue
 
-        if df is not None and len(df) > 0:
-            outstanding = basics.loc[symbols[i]]['outstanding'] * 100000000
-            df = df[::-1]
-            df['p_change'] = df['close'].diff() / df['close'][1:] * 100
-            df['turnover'] = df['volume'] / outstanding * 100
-            df = df[tsfeatures]
-            f.create_dataset(symbols[i], data=np.array(df[1:].astype(float)))
-        i += 1
-    f.flush()
-    return f
+        nowcell = datall[knum:(1 + days) * knum]
 
+        # nowcell里的最后一个收盘价
+        nowclose = nowcell[-1, 1]
 
-def create_today_dataset(lookback=5):
-    """
-    The function takes the `lookback`, which is the number of previous
-    time steps to use as input variables
-    to predict the next time period — in this case defaulted to 5.
-    lookback: number of previous time steps as int
-    returns a list of data cells of format([bsdata, tsdata, lbdata])
-    """
-    rtlabels = ['code', 'open', 'high', 'trade', 'low', 'changepercent', 'turnoverratio']
-    tsdataset = []
-    rtdataset = []
-    print ("[ create today's dataset ]... for price prediction")
+        # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+        for k in range(days):
+            nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
 
-    tsdata_dict = get_newly_data()
-    rtdata_df = ts.get_today_all()[rtlabels]
-    symbs = np.array(rtdata_df['code'])
-    rtset = np.array(rtdata_df.astype(float))
-    for symb in tsdata_dict:
-        if int(symb) not in intstr(symbs): continue
-        rtdata_v = rtset[rtset[:, 0] == int(symb)][0]
-        if rtdata_v[-2] > 9.94 or rtdata_v[-1] == 0:
+        # 异常数据，跳过
+        if abs(nowcell[:, 0:4].any()) > 1.1:
             continue
 
-        tsdata_df = tsdata_dict[symb]
-        if len(tsdata_df) >= lookback - 1:
-            ndata_stock = np.array(tsdata_df[1 - lookback:])
-            ndata_stock = np.vstack([ndata_stock, rtdata_v[1:]])
+        try:
+            j = 4
+            if 'volume' in features:
+                # 归一化成交量
+                nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                j = j + 1
+            if 'tor' in features:
+                # 归一化换手率
+                nowcell[:, j] = minmax_scale(nowcell[:, j])
+                j = j + 1
+            if 'vr' in features:
+                # 归一化量比
+                nowcell[:, j] = minmax_scale(nowcell[:, j])
+        except:
+            pass
 
-            p_change = ndata_stock[:, -2].reshape(-1, 1) / 10
-            turnover = minmax_scale(ndata_stock[:, -1].reshape(-1, 1))
-            ohcl = minmax_scale(ndata_stock[:, 0:4])
-            tsdata = np.hstack([ohcl, p_change, turnover])
-            tsdataset.append(tsdata)
-            rtdataset.append(rtdata_v)
-    tsdataset = np.array(tsdataset)
-    rtdataset = np.array(rtdataset)
-    tsdata_dict.close()
-    return tsdataset, rtdataset
+        bsdata = np.array(int(symb))
+        high = float(max(df.ix[:-48, 'high']))
+        open = float(df.ix[-48, 'open'])
+        close = float(df.ix[-1, 'close'])
+        low = float(min(df.ix[:-48, 'low']))
+        # lbdata=[date, code, open, high, close, low]
+        ldata = [intdate(mydate(ddate[days].split(' ')[0])), int(symb), open, high, close, low]
+
+        data_cell = [bsdata, nowcell, np.array(ldata)]
+        data_all.append(data_cell)
+
+    end_time = datetime.datetime.now()
+    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
+    print (end_time)
+    return data_all
 
 
 def split_dataset(dataset, train_psize, batch_size=1, seed=None):
@@ -662,7 +481,7 @@ def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     if seed is None:
         seed = time.mktime(time.localtime())
 
-    print "[ split_dateset ]... into train and test with seed:" + str(seed)
+    print ("[ split_dateset ]... into train and test with seed:" + str(seed))
     np.random.seed(int(seed))
     np.random.shuffle(dataset)
     # only take effect for array, so need to convert to numpy.array before shuffle
@@ -681,7 +500,7 @@ def create_feeddata(dataset):
     :param dataset: source dataset, a list of data cell of [bsdata, tsdata, lbdata]
     :return: tuple of (bsdata, tsdata, lbdata)
     """
-    print "[ create_feeddata]..."
+    print ("[ create_feeddata]...")
     rows = [len(dataset)]
     if dataset[0][0] is not None:
         bsdata = np.zeros(rows + list(dataset[0][0].shape))
@@ -695,15 +514,15 @@ def create_feeddata(dataset):
         tsdata[i] = dataset[i][1]
         lbdata_v[i] = dataset[i][2]
         i += 1
-    print "[ end create_feeddata]..."
+    print ("[ end create_feeddata]...")
     return bsdata, tsdata, lbdata_v
 
 
 def balance_data(data_y, data_x, data_x2=None):
     # 对于数据倾斜（数据类别不平衡），此函数对少数类的样本进行复制，以消除类别的不平衡
     a = np.sum(data_y, axis=0)
-    print "Category distribution before balancing"
-    print a
+    print ("Category distribution before balancing")
+    print (a)
     b = np.max(a) / (a)
     c = long(np.sum(a * b))
     data_xx = np.zeros([c] + list(data_x.shape[1:]))
@@ -720,8 +539,8 @@ def balance_data(data_y, data_x, data_x2=None):
             if data_x2 is not None:
                 data_xx2[l] = data_x2[i]
             l += 1
-    print "Category distribution after balancing"
-    print np.sum(data_yy, axis=0)
+    print ("Category distribution after balancing")
+    print (np.sum(data_yy, axis=0))
     return data_yy, data_xx, data_xx2
 
 
@@ -759,7 +578,7 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    refresh_kdata(force=True)
+    ncreate_today_dataset(online=True)
     # ncreate_dataset(start='2016-01-01')
 
 

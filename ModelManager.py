@@ -109,7 +109,38 @@ def nbuild_rmodel(params):
     :return: keras Sequential model
     """
 
-    print "[ build_model ]... with params" + str(params)
+    print ("[ build_model ]... with params:" + str(params))
+    lookback = params['lookback']
+    batch_size = params['batch_size']
+    input_dim = params['indim']
+    output_dim = params['outdim']
+    knum = 240/int(params['ktype'])
+
+    model = Sequential()
+    model.add(GRU(32,
+                  activation='tanh',
+                  batch_input_shape=(batch_size, lookback*knum,input_dim),
+                  return_sequences=False))
+    model.add(Dropout(0.5))
+    model.add(Dense(8, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(output_dim))
+    model.add(Activation('softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+                  metrics=params['metrics'])
+    print ("Finish building model")
+    return model
+
+
+def nbuild_lrmodel(params):
+    """
+    The function builds a keras Sequential model
+    :param lookback: number of previous time steps as int
+    :param batch_size: batch_size as int, defaults to 1
+    :return: keras Sequential model
+    """
+
+    print ("[ build_model ]... with params" + str(params))
     lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
@@ -124,41 +155,10 @@ def nbuild_rmodel(params):
     model.add(Dropout(0.2))
     model.add(Dense(8, activation='relu'))
     model.add(Dropout(0.2))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=params['metrics'])
-    print "Finish building model"
-    return model
-
-
-def nbuild_lrmodel(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :return: keras Sequential model
-    """
-
-    print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-    knum = 240/int(params['ktype'])
-
-    model = Sequential()
-    model.add(GRU(32,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback*knum,input_dim),
-                  return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(8, activation='tanh'))
-    model.add(Dropout(0.2))
     model.add(Dense(1))
-    model.add(Activation('linear'))
-    model.compile(loss='mse', optimizer='sgd')
-    print "Finish building model"
+    model.add(Activation('tanh'))
+    model.compile(loss='mse', optimizer='rmsprop')
+    print ("Finish building model")
     return model
 
 
@@ -170,7 +170,7 @@ def build_rmodel(params):
     :return: keras Sequential model
     """
 
-    print "[ build_model ]... with params" + str(params)
+    print ("[ build_model ]... with params" + str(params))
     lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
@@ -189,81 +189,8 @@ def build_rmodel(params):
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                   metrics=params['metrics'])
-    print "Finish building model"
+    print ("Finish building model")
     return model
-
-def build_model4(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :return: keras Sequential model
-    """
-
-    print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(128,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(32))
-    model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                  metrics=params['metrics'])
-    print "Finish building model"
-    return model
-
-
-def build_model2(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :return: keras Sequential model
-    """
-
-    print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    indim1 = params['indim1']
-    indim2 = params['indim2']
-    outdim = params['outdim']
-
-    rrnmodel = Sequential()
-    rrnmodel.add(GRU(64,
-                     activation='tanh',
-                     batch_input_shape=(batch_size, lookback, indim1),
-                     stateful=True,
-                     return_sequences=False))
-    rrnmodel.add(Dropout(0.3))
-    rrnmodel.add(Dense(16, activation='tanh'))
-    rrnmodel.add(Dropout(0.3))
-
-    linearmodel = Sequential()
-    linearmodel.add(Dense(8,  batch_input_shape=(batch_size, indim2)))
-    merged = Merge([rrnmodel, linearmodel], mode='concat')
-
-    final_model = Sequential()
-    final_model.add(merged)
-    final_model.add(Dense(outdim, activation='softmax'))
-
-    if params['outdim'] > 3:
-        metrics = ['precision', eval(params['custmetric']), top_t1p1, 'fmeasure']
-    else:
-        metrics = ['precision', eval(params['custmetric']), 'fmeasure']
-
-    final_model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
-                        metrics=metrics)
-    return final_model
 
 
 def build_model3(params):
@@ -274,32 +201,69 @@ def build_model3(params):
     :return: keras Sequential model
     """
 
-    print "[ build_model ]... with params" + str(params)
+    print ("[ build_model ]... with params:" + str(params))
     lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
+    knum = 240/int(params['ktype'])
 
     model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=True))
-    model.add(GRU(32,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, 64),
-                  stateful=True,
+    model.add(GRU(16,
+                  batch_input_shape=(batch_size, lookback*knum,input_dim),
                   return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(32, activation='tanh'))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.4))
+    model.add(Dense(4, activation='relu'))
+    model.add(Dropout(0.4))
     model.add(Dense(output_dim))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                   metrics=params['metrics'])
-    print "Finish building model"
+    print ("Finish building model")
     return model
+
+
+# def build_model2(params):
+#     """
+#     The function builds a keras Sequential model
+#     :param lookback: number of previous time steps as int
+#     :param batch_size: batch_size as int, defaults to 1
+#     :return: keras Sequential model
+#     """
+#
+#     print ("[ build_model ]... with params" + str(params))
+#     lookback = params['lookback']
+#     batch_size = params['batch_size']
+#     indim1 = params['indim1']
+#     indim2 = params['indim2']
+#     outdim = params['outdim']
+#
+#     rrnmodel = Sequential()
+#     rrnmodel.add(GRU(64,
+#                      activation='tanh',
+#                      batch_input_shape=(batch_size, lookback, indim1),
+#                      stateful=True,
+#                      return_sequences=False))
+#     rrnmodel.add(Dropout(0.3))
+#     rrnmodel.add(Dense(16, activation='tanh'))
+#     rrnmodel.add(Dropout(0.3))
+#
+#     linearmodel = Sequential()
+#     linearmodel.add(Dense(8,  batch_input_shape=(batch_size, indim2)))
+#     merged = Merge([rrnmodel, linearmodel], mode='concat')
+#
+#     final_model = Sequential()
+#     final_model.add(merged)
+#     final_model.add(Dense(outdim, activation='softmax'))
+#
+#     if params['outdim'] > 3:
+#         metrics = ['precision', eval(params['custmetric']), top_t1p1, 'fmeasure']
+#     else:
+#         metrics = ['precision', eval(params['custmetric']), 'fmeasure']
+#
+#     final_model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+#                         metrics=metrics)
+#     return final_model
 
 
 def build_model5(params):
@@ -310,14 +274,14 @@ def build_model5(params):
     :return: keras Sequential model
     """
 
-    print "[ build_model ]... with params" + str(params)
+    print ("[ build_model ]... with params" + str(params))
     lookback = params['lookback']
     batch_size = params['batch_size']
     input_dim = params['indim']
     output_dim = params['outdim']
 
     model = Sequential()
-    model.add(GRU(32,
+    model.add(GRU(64,
                   activation='tanh',
                   batch_input_shape=(batch_size, lookback, input_dim),
                   stateful=True,
@@ -331,42 +295,78 @@ def build_model5(params):
     model.add(Dense(32, activation='tanh'))
     model.add(Dropout(0.5))
     model.add(Dense(output_dim))
-    model.add(Activation('linear'))
-    model.compile(loss='mse', optimizer='rmsprop',
-                  metrics=['accuracy'])
-    print "Finish building model"
-    return model
-
-
-def build_model6(params):
-    """
-    The function builds a keras Sequential model
-    :param lookback: number of previous time steps as int
-    :param batch_size: batch_size as int, defaults to 1
-    :return: keras Sequential model
-    """
-
-    print "[ build_model ]... with params" + str(params)
-    lookback = params['lookback']
-    batch_size = params['batch_size']
-    input_dim = params['indim']
-    output_dim = params['outdim']
-
-    model = Sequential()
-    model.add(GRU(64,
-                  activation='tanh',
-                  batch_input_shape=(batch_size, lookback, input_dim),
-                  stateful=True,
-                  return_sequences=False))
-    model.add(Dropout(0.5))
-    model.add(Dense(16, activation='tanh'))
-    model.add(Dropout(0.5))
-    model.add(Dense(output_dim))
     model.add(Activation('softmax'))
     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
                   metrics=params['metrics'])
-    print "Finish building model"
+    print ("Finish building model")
     return model
+
+#
+# def build_model5(params):
+#     """
+#     The function builds a keras Sequential model
+#     :param lookback: number of previous time steps as int
+#     :param batch_size: batch_size as int, defaults to 1
+#     :return: keras Sequential model
+#     """
+#
+#     print "[ build_model ]... with params" + str(params)
+#     lookback = params['lookback']
+#     batch_size = params['batch_size']
+#     input_dim = params['indim']
+#     output_dim = params['outdim']
+#
+#     model = Sequential()
+#     model.add(GRU(32,
+#                   activation='tanh',
+#                   batch_input_shape=(batch_size, lookback, input_dim),
+#                   stateful=True,
+#                   return_sequences=True))
+#     model.add(GRU(32,
+#                   activation='tanh',
+#                   batch_input_shape=(batch_size, lookback, 64),
+#                   stateful=True,
+#                   return_sequences=False))
+#     model.add(Dropout(0.5))
+#     model.add(Dense(32, activation='tanh'))
+#     model.add(Dropout(0.5))
+#     model.add(Dense(output_dim))
+#     model.add(Activation('linear'))
+#     model.compile(loss='mse', optimizer='rmsprop',
+#                   metrics=['accuracy'])
+#     print "Finish building model"
+#     return model
+#
+#
+# def build_model6(params):
+#     """
+#     The function builds a keras Sequential model
+#     :param lookback: number of previous time steps as int
+#     :param batch_size: batch_size as int, defaults to 1
+#     :return: keras Sequential model
+#     """
+#
+#     print "[ build_model ]... with params" + str(params)
+#     lookback = params['lookback']
+#     batch_size = params['batch_size']
+#     input_dim = params['indim']
+#     output_dim = params['outdim']
+#
+#     model = Sequential()
+#     model.add(GRU(64,
+#                   activation='tanh',
+#                   batch_input_shape=(batch_size, lookback, input_dim),
+#                   stateful=True,
+#                   return_sequences=False))
+#     model.add(Dropout(0.5))
+#     model.add(Dense(16, activation='tanh'))
+#     model.add(Dropout(0.5))
+#     model.add(Dense(output_dim))
+#     model.add(Activation('softmax'))
+#     model.compile(loss='categorical_crossentropy', optimizer='rmsprop',
+#                   metrics=params['metrics'])
+#     print "Finish building model"
+#     return model
 
 if __name__ == "__main__":
     pass
