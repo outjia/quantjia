@@ -2,27 +2,24 @@
 
 from __future__ import absolute_import
 
+import json
 import sys
-from datetime import timedelta
-
-from keras.callbacks import ModelCheckpoint, EarlyStopping, TensorBoard
-from keras.models import load_model
-from keras.utils import plot_model
-from SocketServer import ThreadingMixIn
 from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
-
 from SocketServer import TCPServer
 
-from ModelManager import *
+from keras.callbacks import TensorBoard
+from keras.models import load_model
+from keras.utils import plot_model
 
-import matplotlib.pyplot as plt
+from DM import *
+from ModelManager import *
 
 
 def parse_params(mstr):
     # M1_T5_B256_C3_E100_Lmin_Mgem_K5
     # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, label = 'min', mem = 'gem'
 
-    catf = {'C3': 'catf3', 'C4': 'catf4', 'C2': 'catf2', 'C22': 'catf22', 'C31': 'catf31', 'C32': 'catf32', 'C1': 'noncatf'}
+    catf = {'C3': 'catf3', 'C4': 'catf4', 'C2': 'catf2', 'C22': 'catf22', 'C31': 'catf31', 'C32': 'catf32', 'C1': 'noncatf','C20': 'catf20'}
     models = {'M1': 'build_model', 'M2': 'build_model2', 'M3': 'build_model3', 'M4': 'build_model4', 'M5': 'build_model5', 'MR': 'nbuild_rmodel', 'MLR': 'nbuild_lrmodel'}
     params = {}
     params['mclass'] = ''
@@ -72,7 +69,7 @@ def ntrain_model(mstr, start, mid, end):
     labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['basic']
-    index = ['sme', 'gem']
+    # index = ['sme', 'gem']
     # index = None
     if __debug__:
         index = ['basic']
@@ -107,7 +104,7 @@ def ntrain_model(mstr, start, mid, end):
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
     if __debug__:
-        patience = 2
+        patience = 10
     else:
         patience = 200
 
@@ -117,7 +114,7 @@ def ntrain_model(mstr, start, mid, end):
 
     callbacks = [
         EarlyStopping(monitor='val_top_t1p1', patience=patience, verbose=0, mode='max'),
-        ModelCheckpoint(path + '/best_model.h5', monitor='val_' + params['main_metric'].keys()[0], save_best_only=True, verbose=0, mode='max'),
+        ModelCheckpoint(path + '/weights.{epoch:02d}-{val_top_t1p1:.2f}.hdf5', monitor='val_' + params['main_metric'].keys()[0], period=10, verbose=0, mode='max'),
         TensorBoard(log_dir=path + '/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
     model = eval(params['model'])(params)
@@ -140,17 +137,6 @@ def ntrain_model(mstr, start, mid, end):
 
         print_dist_cut(sortout, proba.shape[-1] - 1, labelcol, 20, path)
         print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
-
-    # proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    # out = np.hstack([proba, test_y_v])
-    # sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-    #
-    # print_dist(sortout, params['outdim'] - 1, 20)
-    #
-    # if not __debug__:
-    #     np.savetxt("./models/" + params['model_name'] + "/val_result.txt", sortout, fmt='%f')
-    # else:
-    #     print sortout[0:200, :]
     print ("[ End train model ]")
     return sortout
 
@@ -207,9 +193,12 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
         sz = len(train_y) // params['batch_size'] * params['batch_size']
         train_x = train_x[:sz]
         train_y = train_y[:sz]
+        print (np.sum(train_y, axis=0))
+
 
         val_x = tsval
         val_y = eval(params['catf'])(lbval_v[:, labelcol])
+        print (np.sum(val_y, axis=0))
 
         sz = len(lbtest_v) // params['batch_size'] * params['batch_size']
         test_x = tstest[:sz]
@@ -230,6 +219,8 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
         model = eval(params['model'])(params)
         print ("model summary")
         model.summary()
+        print (np.sum(train_y, axis=0))
+        print (np.sum(val_y, axis=0))
         model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'],  # validation_split=0.33,callbacks=callbacks)
                   validation_data=(val_x, val_y), callbacks=callbacks)
         save_model(model, path + '/model.h5')
@@ -275,13 +266,13 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
     print ("[ End train model ]")
 
 
-def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None):
+def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None, mname='best_model.h5'):
     print ("[ valid model: %s ]... with data from %s to %s" % (mstr, start, end))
     params = parse_params(mstr)
     path = 'models/' + params['mclass'] + '/' + params['model_name']
     if run is not None:
-        path = path + '/' + run
-    model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
+        path = path + '/' + run + '/'
+    model = load_model(path + mname, custom_objects=params['cmetrics'])
     print ("model summary")
     model.summary()
 
@@ -387,22 +378,22 @@ def ntrain_lrmodel(mstr, start, mid, end):
     print ("[ End train model ]")
 
 
-def test_model(mstr, run, start, end, test_step=30):
+def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
     params = parse_params(mstr)
     print ("[ valid model ]... " + mstr)
 
     labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
-    # index = ['hs300s']
+    # index = ['basic']
     if __debug__:
         index = ['debug']
 
     params = parse_params(mstr)
     path = 'models/' + params['mclass'] + '/' + params['model_name']
     if run is not None:
-        path = path + '/' + run
-    model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
+        path = path + '/' + run+'/'
+    model = load_model(path + mname, custom_objects=params['cmetrics'])
     print ("model summary")
     model.summary()
 
@@ -521,10 +512,79 @@ def predict_today(mstr, run,force_return=False):
     return candidates
 
 
+def predict_today2(mstrs, runs,force_return=False):
+    print ("[ select stocks ]... using model:" + str(mstrs))
+    index = None
+    index = ['sme', 'gem']
+    if __debug__:
+        index = ['sme']
+        pass
+
+    models_days={}
+    for i in range (len(mstrs)):
+        params = parse_params(mstrs[i])
+        models_days[mstrs[i]] = params['lookback']
+    days=list(set(models_days.values()))
+    dataset = ncreate_today_dataset_threads(index=index, days=days,force_return=force_return)
+
+    candidates={}
+    for i in range(len(mstrs)):
+        params = parse_params(mstrs[i])
+        path = 'models/' + params['mclass'] + '/' + params['model_name']
+        if runs[i] is not None:
+            path = path + '/' + runs[i]
+        model = load_model(str(path) + '/best_model.h5', custom_objects=params['cmetrics'])
+        print ("model summary:" + mstrs[i])
+        model.summary()
+
+        bs, ts, lb = create_feeddata(dataset[models_days[mstrs[i]]],copies=1)
+        sz = len(bs) // params['batch_size'] * params['batch_size']
+        ts = ts[:sz]
+        bs = bs[:sz]
+        lb = lb[:sz]
+
+        proba = model.predict_proba(ts, verbose=0, batch_size=params['batch_size'])
+        out = np.hstack([proba, lb])
+        sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
+
+        if not __debug__:
+            dt = datetime.date.today().strftime('%Y-%m-%d')
+            np.savetxt(path+"/" + dt + "_result.txt", sortout, fmt='%f')
+        else:
+            print (sortout[0:20, :])
+
+        idx = params['outdim'] - 1
+        sortout = sortout[sortout[:, idx] >= 0.5][:, (idx + 2, -2, idx)]
+
+        candidates[mstrs[i]] = pd.DataFrame(sortout, columns=('code', 'price', 'proba'))
+        candidates[mstrs[i]]['model'] = str(mstrs[i])
+
+    print ("[ End prediction ] of tomorrow's price")
+    cands = pd.concat(candidates.values())
+    return cands
+
+
 def predict_today_rpc(mstr, run, force_return=True):
     df = predict_today(mstr, run, force_return)
     return df.to_json()
     pass
+
+
+def predict_today_rpc2(jsonstr, force_return=False):
+    map = json.loads(jsonstr)
+    df = predict_today2(map.keys(), map.values(), force_return)
+    return df.to_json(orient='records')
+
+
+def predict_today_rpc2_test(jsonstr, force_return=False):
+    jsonstr = '{"MR_T2_B256_C2_E1000_Lclose_K5_XSGD": "S2016-01-01.20181009.11.29.52.run"' \
+              ',"MR_T5_B256_C2_E2000_Lclose_K5_XSGD": "S2015-01-03.20181114.11.21.34.run"' \
+              ',"MR_T10_B256_C2_E2000_Lclose_K5_XSGD":"S2015-01-03.20181119.17.27.09.run"}'
+    force_return = False
+    map = json.loads(jsonstr)
+    df = predict_today2(map.keys(), map.values(), force_return)
+    return df.to_json()
+
 
 
 def print_model(mstr):
@@ -567,7 +627,7 @@ def start_service():
 
     # create server
     server = SimpleXMLRPCServer(('127.0.0.1', 8080), SimpleXMLRPCRequestHandler, True)
-    server.register_function(predict_today_rpc, "predict_today_rpc")
+    server.register_function(predict_today_rpc2, "predict_today_rpc2")
     server.serve_forever()
     # _main_()
     # predict_today('MR_T2_B256_C2_E1000_Lclose_K5_XSGD', 'S2016-01-01.20181009.11.29.52.run')
@@ -576,7 +636,9 @@ def start_service():
 
 
 def _main_():
-    if len(sys.argv) > 6:
+    if len(sys.argv) > 7:
+        eval(sys.argv[1])(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+    elif len(sys.argv) > 6:
         eval(sys.argv[1])(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6])
     elif len(sys.argv) > 5:
         eval(sys.argv[1])(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])

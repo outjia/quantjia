@@ -23,6 +23,8 @@ import tushare as ts
 from business_calendar import Calendar
 from keras.utils import np_utils
 from sklearn import preprocessing
+from sqlalchemy import create_engine
+import threading
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
              'reservedPerShare', 'esp', 'bvps', 'pb', 'undp', 'perundp', 'rev', 'profit', 'gpr',
@@ -147,10 +149,10 @@ def catf3(data):
     return data_y
 
 
-def catf22(data):
+def catf20(data):
     # 对low进行预测
     data_y = data.copy()
-    data_y[data_y <= 1] = 31
+    data_y[data_y <= 0] = 31
     data_y[data_y < 31] = 32
     data_y -= 31
     data_y = np_utils.to_categorical(data_y, 2)
@@ -247,7 +249,9 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
         symbols = int2str(symbols)
         if 'debug' in index:
             symbols.extend(list(get_index_list('debug').code))
-    # idx_df = pd.read_csv(path + st_cat[index] + '.csv', index_col='date', dtype={'code': str})
+        if 'test' in index:
+            debug_df = pd.read_csv("./data/test.csv", index_col=0, dtype={'code': str})
+            symbols.extend(list(debug_df.code))
 
     knum = 240 // int(ktype)
 
@@ -470,6 +474,262 @@ def ncreate_today_dataset(index=None, days=3, ktype='5', online=True, force_retu
     return data_all
 
 
+def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False):
+    print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))
+
+    start_time = datetime.datetime.now()
+
+    print (start_time)
+
+    features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
+
+    day=max(days)
+    start = (datetime.date.today() - timedelta(days=day + 8)).strftime('%Y-%m-%d')
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
+
+    knum = 240 // int(ktype)
+
+    st_symbols = list(ts.get_st_classified().code)
+    symbols = [i for i in symbols if i not in st_symbols]
+
+    data_all = {}
+    for d in days:
+        data_all[d] = []
+    count = 0
+    for symb in symbols:
+        # if st_symbols.index(symb):continue
+        # 超过下午2点58，立即返回，以便后续进行买卖操作
+        if force_return and datetime.datetime.now().time() > datetime.time(14,59,0):
+            break;
+        if __debug__ and count>260:
+            # break
+            pass
+        count = count + 1
+
+        try:
+            dff = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
+        except:
+            print ("Exception when processing index:" + symb)
+            traceback.print_exc()
+            continue
+
+        length = len(dff)
+        for d in days:
+            if dff is not None and length > knum * (d + 1):
+                df = dff[dff['date'] > start]
+                df = df.set_index('date')
+                residual = len(df) % knum
+                if residual > 0:
+                    for i in range(knum - residual):
+                        df = df.append(df.iloc[-1:])
+
+                # 近日复牌或停牌数据，跳过
+                if len(df) < knum * (d + 1):
+                    continue
+
+                df = df.iloc[-int((d + 1) * knum):]
+                df.fillna(method='bfill')
+                df.fillna(method='ffill')
+                if index is not None: df = df  # .join(idx_df)
+
+                dclose = np.array(df.ix[knum - 1::knum, 'close'])
+                # 当天涨停，无法进行买入操作，删除此类案例
+                if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
+                    continue
+                ddate = df.index[::knum]
+                datall = np.array(df.ix[:, features])
+            else:
+                continue
+
+            nowcell = datall[knum:(1 + d) * knum]
+
+            # nowcell里的最后一个收盘价
+            nowclose = nowcell[-1, 1]
+
+            # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+            for k in range(d):
+                nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
+
+            # 异常数据，跳过
+            if abs(nowcell[:, 0:4].any()) > 1.1:
+                continue
+
+            try:
+                j = 4
+                if 'volume' in features:
+                    # 归一化成交量
+                    nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                    j = j + 1
+                if 'tor' in features:
+                    # 归一化换手率
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
+                    j = j + 1
+                if 'vr' in features:
+                    # 归一化量比
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
+            except:
+                pass
+
+            bsdata = np.array(int(symb))
+            high = float(max(df.ix[:-48, 'high']))
+            open = float(df.ix[-48, 'open'])
+            close = float(df.ix[-1, 'close'])
+            low = float(min(df.ix[:-48, 'low']))
+            # lbdata=[date, code, open, high, close, low]
+            ldata = [intdate(mydate(ddate[d].split(' ')[0])), int(symb), open, high, close, low]
+
+            data_cell = [bsdata, nowcell, np.array(ldata)]
+            data_all.get(d).append(data_cell)
+
+    end_time = datetime.datetime.now()
+    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
+    print (end_time)
+    return data_all
+
+
+count = 0
+mutex = threading.Lock()
+data_all = {}
+
+
+def ncreate_today_dataset_threads(index=None, days=[3,5], ktype='5', force_return=False):
+    print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))
+    global count, data_all
+    start_time = datetime.datetime.now()
+    print (start_time)
+    day = max(days)
+
+    start = (datetime.date.today() - timedelta(days=day + 8)).strftime('%Y-%m-%d')
+
+    for d in days:
+        data_all[d] = []
+
+    count = 0
+    threads = 4
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        for i in index:
+            symbols.extend(list(get_index_list(i).code))
+    st_symbols = list(ts.get_st_classified().code)
+    symbols = [i for i in symbols if i not in st_symbols]
+
+    step = len(symbols) // threads
+    symbol_list = [symbols[i:i+step] for i in xrange(0, len(symbols), step)]
+
+    for symbs in symbol_list:
+        t = threading.Thread(target=ncreate_today_dataset_thread, args=(symbs,start, days, ktype, force_return, ))
+        t.start()
+        t.join()
+
+    end_time = datetime.datetime.now()
+    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
+    print (end_time)
+    return data_all
+
+
+def ncreate_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', force_return=False):
+    knum = 240 // int(ktype)
+    features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
+    global count, mutex, data_all
+
+    for symb in symbs:
+        # if st_symbols.index(symb):continue
+        # 超过下午2点58，立即返回，以便后续进行买卖操作
+        if force_return and datetime.datetime.now().time() > datetime.time(14,59,0):
+            break;
+
+        if mutex.acquire():
+            if __debug__ and count > 260:
+                pass
+            count = count + 1
+            mutex.release()
+
+        # time.sleep(0.005)
+        try:
+            dff = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
+        except:
+            print ("Exception when processing index:" + symb)
+            traceback.print_exc()
+            continue
+
+        length = len(dff)
+        for d in days:
+            if dff is not None and length > knum * (d + 1):
+                df = dff[dff['date'] > start]
+                df = df.set_index('date')
+                residual = len(df) % knum
+                if residual > 0:
+                    for i in range(knum - residual):
+                        df = df.append(df.iloc[-1:])
+
+                # 近日复牌或停牌数据，跳过
+                if len(df) < knum * (d + 1):
+                    continue
+
+                df = df.iloc[-int((d + 1) * knum):]
+                df.fillna(method='bfill')
+                df.fillna(method='ffill')
+
+                dclose = np.array(df.ix[knum - 1::knum, 'close'])
+                # 当天涨停，无法进行买入操作，删除此类案例
+                if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
+                    continue
+                ddate = df.index[::knum]
+                datall = np.array(df.ix[:, features])
+            else:
+                continue
+
+            nowcell = datall[knum:(1 + d) * knum]
+
+            # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+            for k in range(d):
+                nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
+
+            # 异常数据，跳过
+            if abs(nowcell[:, 0:4].any()) > 1.1:
+                continue
+
+            try:
+                j = 4
+                if 'volume' in features:
+                    # 归一化成交量
+                    nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                    j = j + 1
+                if 'tor' in features:
+                    # 归一化换手率
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
+                    j = j + 1
+                if 'vr' in features:
+                    # 归一化量比
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
+            except:
+                pass
+
+            bsdata = np.array(int(symb))
+            high = float(max(df.ix[:-48, 'high']))
+            open = float(df.ix[-48, 'open'])
+            close = float(df.ix[-1, 'close'])
+            low = float(min(df.ix[:-48, 'low']))
+            # lbdata=[date, code, open, high, close, low]
+            ldata = [intdate(mydate(ddate[d].split(' ')[0])), int(symb), open, high, close, low]
+            data_cell = [bsdata, nowcell, np.array(ldata)]
+
+            if mutex.acquire():
+                data_all.get(d).append(data_cell)
+                mutex.release()
+
+
 def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     """
     Splits dataset into training and test datasets. The last `lookback` rows in train dataset
@@ -494,13 +754,43 @@ def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     return train, test
 
 
-def create_feeddata(dataset):
+# def create_feeddata(dataset):
+#     """
+#     Splits dataset into data and labels.
+#     :param dataset: source dataset, a list of data cell of [bsdata, tsdata, lbdata]
+#     :return: tuple of (bsdata, tsdata, lbdata)
+#     """
+#     print ("[ create_feeddata]...")
+#     rows = [len(dataset)]
+#     if dataset[0][0] is not None:
+#         bsdata = np.zeros(rows + list(dataset[0][0].shape))
+#     else:
+#         bsdata = np.zeros(rows)
+#     tsdata = np.zeros(rows + list(dataset[0][1].shape))
+#     lbdata_v = np.zeros(rows + list(dataset[0][2].shape))
+#     i = 0
+#     while i < len(dataset):
+#         bsdata[i] = dataset[i][0]
+#         tsdata[i] = dataset[i][1]
+#         lbdata_v[i] = dataset[i][2]
+#         i += 1
+#     print ("[ end create_feeddata]...")
+#     return bsdata, tsdata, lbdata_v
+
+
+def create_feeddata(dataset, copies=1):
     """
     Splits dataset into data and labels.
-    :param dataset: source dataset, a list of data cell of [bsdata, tsdata, lbdata]
+    :param dataset: source dataset, a list of data cell of [bsdata, tsdata, lbdata];
+    :param copies: copies of source dataset
     :return: tuple of (bsdata, tsdata, lbdata)
     """
     print ("[ create_feeddata]...")
+    data = dataset
+    for j in range(copies-1):
+        dataset.extend(data)
+    np.random.shuffle(dataset)
+
     rows = [len(dataset)]
     if dataset[0][0] is not None:
         bsdata = np.zeros(rows + list(dataset[0][0].shape))
@@ -578,7 +868,8 @@ def main():
     # np.random.shuffle(data)
     # print '#####get dataset2 samples############'
     # print data
-    ncreate_today_dataset(online=True)
+    ncreate_today_dataset_threads(index=['gem','sme'])
+    # ncreate_today_dataset2(index=['gem'])
     # ncreate_dataset(start='2016-01-01')
 
 
