@@ -68,8 +68,8 @@ def ntrain_model(mstr, start, mid, end):
 
     labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
-    index = ['basic']
-    # index = ['sme', 'gem']
+    # index = ['basic']
+    index = ['sme', 'gem']
     # index = None
     if __debug__:
         index = ['basic']
@@ -123,22 +123,22 @@ def ntrain_model(mstr, start, mid, end):
     model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'], validation_data=(val_x, val_y), callbacks=callbacks)
     save_model(model, path + '/model.h5')
 
-    if params['catf'] == 'noncatf':
-        return None
-    else:
-        print ('使用最优模型进行预测')
-        model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
-        proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-
-        out = np.hstack([proba, test_y_v])
-        sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
-        if not __debug__:
-            np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
-
-        print_dist_cut(sortout, proba.shape[-1] - 1, labelcol, 20, path)
-        print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
+    # if params['catf'] == 'noncatf':
+    #     return None
+    # else:
+    #     print ('使用最优模型进行预测')
+    #     model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
+    #     proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
+    #
+    #     out = np.hstack([proba, test_y_v])
+    #     sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
+    #     if not __debug__:
+    #         np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
+    #
+    #     print_dist_cut(sortout, proba.shape[-1] - 1, labelcol, 20, path)
+    #     print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
     print ("[ End train model ]")
-    return sortout
+    # return sortout
 
 
 def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
@@ -266,41 +266,54 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
     print ("[ End train model ]")
 
 
-def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=None, mname='best_model.h5'):
-    print ("[ valid model: %s ]... with data from %s to %s" % (mstr, start, end))
-    params = parse_params(mstr)
-    path = 'models/' + params['mclass'] + '/' + params['model_name']
-    if run is not None:
-        path = path + '/' + run + '/'
-    model = load_model(path + mname, custom_objects=params['cmetrics'])
-    print ("model summary")
-    model.summary()
+def nvalid_model_merge(path='./models/verified_models/', start=(datetime.date.today() - timedelta(days=60)).strftime('%Y-%m-%d'), end=datetime.date.today().strftime('%Y-%m-%d')):
+    results = None
+    models = os.listdir(path)
+    for name in models:
+        if os.path.isfile(path+name):
+            mstr = name.split('.')[0]
+            print ("[ valid model: %s ]... with data from %s to %s" % (mstr, start, end))
+            params = parse_params(mstr)
+            model = load_model(path + name, custom_objects=params['cmetrics'])
+            print ("model summary")
+            model.summary()
 
-    labcol_map = {'close': -3, 'min': -2, 'max': -1}
-    labelcol = labcol_map[params['label']]
+            labcol_map = {'close': -3, 'min': -2, 'max': -1}
+            labelcol = labcol_map[params['label']]
 
-    dataset = ncreate_dataset(days=params['lookback'], start=start, end=end, ktype=params['ktype'])
-    bs, ts, lb_v = create_feeddata(dataset)
-    y = eval(params['catf'])(lb_v[:, labelcol])
-    sz = len(y) // params['batch_size'] * params['batch_size']
-    x = ts[:sz]
-    y = y[:sz]
-    lb_v = lb_v[:sz]
+            dataset = ncreate_dataset(index=['gem','sme'],days=params['lookback'], start=start, end=end, ktype=params['ktype'])
+            bs, ts, lb_v = create_feeddata(dataset)
+            y = eval(params['catf'])(lb_v[:, labelcol])
+            sz = len(y) // params['batch_size'] * params['batch_size']
+            x = ts[:sz]
+            lb_v = lb_v[:sz]
 
-    proba = model.predict_proba(x, verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, lb_v])
-    sortout = out[(-out[:, proba.shape[- 1] - 1]).argsort(), :]
+            proba = model.predict_proba(x, verbose=0, batch_size=params['batch_size'])
+            out = np.hstack([proba, lb_v])
+            df = pd.DataFrame(out,columns=['prob1', 'prob2', 'date', 'code', 'low', 'high', 'c2c2', 'o2c', 'c2c', 'l2c', 'h2c'])
+            results = df.append(results)
 
-    print_dist(sortout, proba.shape[- 1] - 1, labelcol, 20)
-    print_dist_cut(sortout, params['outdim'] - 1, labelcol, 20)
+            sortout = out[(-out[:, proba.shape[- 1] - 1]).argsort(), :]
+            print_dist(sortout, proba.shape[- 1] - 1, labelcol, 20)
+            print_dist_cut(sortout, params['outdim'] - 1, labelcol, 20)
 
-    if not __debug__:
-        np.savetxt(path + "/best_model." + start + "." + end + ".txt", sortout, fmt='%f')
-    else:
-        print (sortout[0:200, :])
+            if not __debug__:
+                np.savetxt(path + name +"." + start + "-" + end + ".txt", sortout, fmt='%f')
+            else:
+                print (sortout[0:200, :])
+            print ("[ End validate model: %s ]... " % (mstr))
 
-    print ("[ End validate model: %s ]... " % (mstr))
-    # return sortout
+    print ("merging all verified models")
+    merged = results.groupby(['date','code']).mean()
+    sorted_merged = merged.sort_values('prob2',ascending=False)
+    factor = pd.cut(sorted_merged.prob2,np.arange(20)/20.0)
+    grouped = sorted_merged.c2c.groupby(factor)
+    grouped.apply(get_stats).unstack()
+    print (grouped.apply(get_stats).unstack())
+
+
+def get_stats(group):
+    return {'min':group.min(),'max':group.max(),'count':group.count(),'mean':group.mean()}
 
 
 def ntrain_lrmodel(mstr, start, mid, end):
@@ -458,74 +471,22 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
         # print_dist(result_data[i], params['outdim']-1, labelcol, 10)
         # print_dist_cut(result_data[i], params['outdim'], labelcol, 20)
         i += 1
-
     print ("[ End validate model ]")
+    return
 
 
-def predict_batch():
-    file = os.path.realpath(__file__)
-    os.chdir(os.path.dirname(file))
-    print (os.path.dirname(file))
-    path = "./models/confirm/"
-    for model in os.listdir(path):
-        if os.path.isdir(path + model):
-            if os.path.exists(path + model + '/model.h5'):
-                predict_today(model, path)
-
-
-def predict_today(mstr, run,force_return=False):
-    print ("[ select stocks ]... using model:" + mstr)
-    params = parse_params(mstr)
-    path = 'models/' + params['mclass'] + '/' + params['model_name']
-    if run is not None:
-        path = path + '/' + run
-    model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
-    print ("model summary")
-    model.summary()
-    index = None
-    index = ['sme', 'gem']
-    if __debug__:
-        index = ['sme']
-        pass
-
-    dataset = ncreate_today_dataset(index=index, days=params['lookback'],force_return=force_return)
-    bs, ts, lb = create_feeddata(dataset)
-    sz = len(bs) // params['batch_size'] * params['batch_size']
-    ts = ts[:sz]
-    bs = bs[:sz]
-    lb = lb[:sz]
-
-    proba = model.predict_proba(ts, verbose=0, batch_size=params['batch_size'])
-    out = np.hstack([proba, lb])
-    sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
-
-    if not __debug__:
-        dt = datetime.date.today().strftime('%Y-%m-%d')
-        np.savetxt(path+"/" + dt + "_result.txt", sortout, fmt='%f')
-    else:
-        print (sortout[0:20, :])
-
-    idx = params['outdim'] - 1
-    sortout = sortout[sortout[:, idx] >= 0.5][:, (idx + 2, -2, idx)]
-    candidates = pd.DataFrame(sortout, columns=('code', 'price', 'proba'))
-    print ("[ End prediction ] of tomorrow's price")
-    return candidates
-
-
-def predict_today2(mstrs, runs,force_return=False):
+def predict_today2(mstrs, runs, force_return=False, mname='best_model.h5'):
     print ("[ select stocks ]... using model:" + str(mstrs))
-    index = None
     index = ['sme', 'gem']
-    if __debug__:
-        index = ['sme']
-        pass
+    index = None
+    # index = ['sme']
 
     models_days={}
     for i in range (len(mstrs)):
         params = parse_params(mstrs[i])
         models_days[mstrs[i]] = params['lookback']
     days=list(set(models_days.values()))
-    dataset = ncreate_today_dataset_threads(index=index, days=days,force_return=force_return)
+    dataset = ncreate_today_dataset2(index=index, days=days,force_return=force_return)
 
     candidates={}
     for i in range(len(mstrs)):
@@ -533,11 +494,13 @@ def predict_today2(mstrs, runs,force_return=False):
         path = 'models/' + params['mclass'] + '/' + params['model_name']
         if runs[i] is not None:
             path = path + '/' + runs[i]
-        model = load_model(str(path) + '/best_model.h5', custom_objects=params['cmetrics'])
+        model = load_model(str(path)+"/"+mname, custom_objects=params['cmetrics'])
         print ("model summary:" + mstrs[i])
         model.summary()
 
         bs, ts, lb = create_feeddata(dataset[models_days[mstrs[i]]],copies=1)
+        if bs is None:
+            continue
         sz = len(bs) // params['batch_size'] * params['batch_size']
         ts = ts[:sz]
         bs = bs[:sz]
@@ -564,27 +527,18 @@ def predict_today2(mstrs, runs,force_return=False):
     return cands
 
 
-def predict_today_rpc(mstr, run, force_return=True):
-    df = predict_today(mstr, run, force_return)
-    return df.to_json()
-    pass
-
-
 def predict_today_rpc2(jsonstr, force_return=False):
     map = json.loads(jsonstr)
-    df = predict_today2(map.keys(), map.values(), force_return)
+    df = predict_today2(map.keys(), map.values(), force_return=force_return)
     return df.to_json(orient='records')
 
 
 def predict_today_rpc2_test(jsonstr, force_return=False):
-    jsonstr = '{"MR_T2_B256_C2_E1000_Lclose_K5_XSGD": "S2016-01-01.20181009.11.29.52.run"' \
-              ',"MR_T5_B256_C2_E2000_Lclose_K5_XSGD": "S2015-01-03.20181114.11.21.34.run"' \
+    jsonstr = '{"MR_T5_B256_C2_E2000_Lclose_K5_XSGD": "S2015-01-03.20181114.11.21.34.run"' \
               ',"MR_T10_B256_C2_E2000_Lclose_K5_XSGD":"S2015-01-03.20181119.17.27.09.run"}'
-    force_return = False
     map = json.loads(jsonstr)
-    df = predict_today2(map.keys(), map.values(), force_return)
+    df = predict_today2(map.keys(), map.values(), force_return=force_return)
     return df.to_json()
-
 
 
 def print_model(mstr):
@@ -655,6 +609,7 @@ def _main_():
 
 if __name__ == '__main__':
     _main_()
+    exit(0)
     # M1T5C3_D1()
     # predict_today()
 
