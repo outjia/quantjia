@@ -350,130 +350,6 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     return data_all
 
 
-def ncreate_today_dataset(index=None, days=3, ktype='5', online=True, force_return=False):
-    print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
-
-    start_time = datetime.datetime.now()
-
-    print (start_time)
-
-    features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
-
-    start = (datetime.date.today() - timedelta(days=days + 8)).strftime('%Y-%m-%d')
-    path = './data/k' + ktype + '_data/'
-
-    symbols = []
-    if index is None or len(index) == 0:
-        basics = get_basic_data()
-        symbols = int2str(list(basics.index))
-    else:
-        for i in index:
-            symbols.extend(list(get_index_list(i).code))
-
-    knum = 240 // int(ktype)
-
-    st_symbols = list(ts.get_st_classified().code)
-    symbols = [i for i in symbols if i not in st_symbols]
-
-    data_all = []
-    count = 0
-    for symb in symbols:
-        # if st_symbols.index(symb):continue
-        # 超过下午2点58，立即返回，以便后续进行买卖操作
-        if force_return and datetime.datetime.now().time() > datetime.time(14,59,0):
-            break;
-        count = count + 1
-        try:
-            if online is True:
-                try:
-                    df = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
-                    length = len(df)
-                    if df is not None and length > knum * (days + 1):
-                        df = df[df['date'] > start]
-                        df = df.set_index('date')
-                        residual = length % knum
-                        if residual > 0:
-                            for i in range(knum - residual):
-                                df = df.append(df.iloc[-1:])
-
-                        # 近日复牌或停牌数据，跳过
-                        if len(df) < knum * (days + 1):
-                            continue
-
-                        df = df.iloc[-int((days + 1) * knum):]
-                        df.fillna(method='bfill')
-                        df.fillna(method='ffill')
-                        if index is not None: df = df  # .join(idx_df)
-
-                        dclose = np.array(df.ix[knum - 1::knum, 'close'])
-                        # 当天涨停，无法进行买入操作，删除此类案例
-                        if (dclose[days] - dclose[days - 1]) / dclose[days - 1] > 0.099:
-                            continue
-                        ddate = df.index[::knum]
-                        datall = np.array(df.ix[:, features])
-                    else:
-                        continue
-                    # df = df.reindex(index=df.date,columns=features)
-                except:
-                    print ("Exception when processing index:" + symb)
-                    traceback.print_exc()
-                    continue
-            else:
-                df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
-        except:
-            if __debug__:
-                traceback.print_exc()
-            else:
-                # print "Can't get data for symbol:" + str(symb)
-                pass
-            continue
-
-        nowcell = datall[knum:(1 + days) * knum]
-
-        # nowcell里的最后一个收盘价
-        nowclose = nowcell[-1, 1]
-
-        # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
-        for k in range(days):
-            nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
-
-        # 异常数据，跳过
-        if abs(nowcell[:, 0:4].any()) > 1.1:
-            continue
-
-        try:
-            j = 4
-            if 'volume' in features:
-                # 归一化成交量
-                nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
-                j = j + 1
-            if 'tor' in features:
-                # 归一化换手率
-                nowcell[:, j] = minmax_scale(nowcell[:, j])
-                j = j + 1
-            if 'vr' in features:
-                # 归一化量比
-                nowcell[:, j] = minmax_scale(nowcell[:, j])
-        except:
-            pass
-
-        bsdata = np.array(int(symb))
-        high = float(max(df.ix[:-48, 'high']))
-        open = float(df.ix[-48, 'open'])
-        close = float(df.ix[-1, 'close'])
-        low = float(min(df.ix[:-48, 'low']))
-        # lbdata=[date, code, open, high, close, low]
-        ldata = [intdate(mydate(ddate[days].split(' ')[0])), int(symb), open, high, close, low]
-
-        data_cell = [bsdata, nowcell, np.array(ldata)]
-        data_all.append(data_cell)
-
-    end_time = datetime.datetime.now()
-    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
-    print (end_time)
-    return data_all
-
-
 def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False):
     print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))
 
@@ -484,7 +360,7 @@ def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False
     features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
 
     day=max(days)
-    start = (datetime.date.today() - timedelta(days=day + 8)).strftime('%Y-%m-%d')
+    start = (datetime.date.today() - timedelta(days=day + 12)).strftime('%Y-%m-%d')
 
     symbols = []
     if index is None or len(index) == 0:
@@ -493,25 +369,26 @@ def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False
     else:
         for i in index:
             symbols.extend(list(get_index_list(i).code))
-
-    knum = 240 // int(ktype)
-
+    #去除ST股票
     st_symbols = list(ts.get_st_classified().code)
     symbols = [i for i in symbols if i not in st_symbols]
+
 
     data_all = {}
     for d in days:
         data_all[d] = []
-    count = 0
+
+    knum = 240 // int(ktype)
+    debug_count = 0
     for symb in symbols:
-        # if st_symbols.index(symb):continue
+
+        debug_count = debug_count + 1
+        if __debug__ and debug_count > 260:
+            break
+
         # 超过下午2点58，立即返回，以便后续进行买卖操作
         if force_return and datetime.datetime.now().time() > datetime.time(14,59,0):
             break;
-        if __debug__ and count>260:
-            # break
-            pass
-        count = count + 1
 
         try:
             dff = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
@@ -520,38 +397,42 @@ def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False
             traceback.print_exc()
             continue
 
-        length = len(dff)
         for d in days:
-            if dff is not None and length > knum * (d + 1):
-                df = dff[dff['date'] > start]
-                df = df.set_index('date')
-                residual = len(df) % knum
-                if residual > 0:
-                    for i in range(knum - residual):
-                        df = df.append(df.iloc[-1:])
-
-                # 近日复牌或停牌数据，跳过
-                if len(df) < knum * (d + 1):
-                    continue
-
-                df = df.iloc[-int((d + 1) * knum):]
-                df.fillna(method='bfill')
-                df.fillna(method='ffill')
-                if index is not None: df = df  # .join(idx_df)
-
-                dclose = np.array(df.ix[knum - 1::knum, 'close'])
-                # 当天涨停，无法进行买入操作，删除此类案例
-                if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
-                    continue
-                ddate = df.index[::knum]
-                datall = np.array(df.ix[:, features])
-            else:
+            if dff is None or len(dff) <= knum * d:
                 continue
 
-            nowcell = datall[knum:(1 + d) * knum]
+            s = (datetime.date.today() - timedelta(days=day + 12)).strftime('%Y-%m-%d')
+            df = dff[dff['date'] > s]
 
-            # nowcell里的最后一个收盘价
-            nowclose = nowcell[-1, 1]
+            # 近日复牌或停牌数据，跳过
+            if len(df) <= knum * d:
+                continue
+
+            df = df.set_index('date')
+
+            if len(df) == len(dff):
+                #get_K_data返回14:55和15:00两个数据
+                residual = len(df) % knum - 2
+            else:
+                residual = len(df) % knum
+
+            if residual > 0:
+                for i in range(knum - residual):
+                    df = df.append(df.iloc[-1:])
+
+            ddate = df.index[::knum]
+            dclose = np.array(df.ix[(len(df) - 1)% knum::knum, 'close'])
+
+            if(len(dclose)<=day):
+                continue
+            # 当天涨停，无法进行买入操作，删除此类案例
+            if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
+                continue
+
+            df.fillna(method='bfill')
+            df.fillna(method='ffill')
+
+            nowcell = np.array(df.ix[- d * knum:, features])
 
             # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
             for k in range(d):
@@ -578,18 +459,23 @@ def ncreate_today_dataset2(index=None, days=[3,5], ktype='5', force_return=False
                 pass
 
             bsdata = np.array(int(symb))
-            high = float(max(df.ix[:-48, 'high']))
+            high = float(max(df.ix[-48:, 'high']))
             open = float(df.ix[-48, 'open'])
             close = float(df.ix[-1, 'close'])
-            low = float(min(df.ix[:-48, 'low']))
+            low = float(min(df.ix[-48:, 'low']))
             # lbdata=[date, code, open, high, close, low]
             ldata = [intdate(mydate(ddate[d].split(' ')[0])), int(symb), open, high, close, low]
 
             data_cell = [bsdata, nowcell, np.array(ldata)]
             data_all.get(d).append(data_cell)
 
+    #删除空的元组
+    for d in days:
+        if len(data_all.get(d))==0:
+            data_all.pop(d)
+
     end_time = datetime.datetime.now()
-    print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
+    print ("[ Finish create data set] of " + str(debug_count) + " stocks, elapsed time:" + str(end_time - start_time))
     print (end_time)
     return data_all
 
@@ -606,7 +492,7 @@ def ncreate_today_dataset_threads(index=None, days=[3,5], ktype='5', force_retur
     print (start_time)
     day = max(days)
 
-    start = (datetime.date.today() - timedelta(days=day + 8)).strftime('%Y-%m-%d')
+    start = (datetime.date.today() - timedelta(days=day + 12)).strftime('%Y-%m-%d')
 
     for d in days:
         data_all[d] = []
@@ -631,6 +517,11 @@ def ncreate_today_dataset_threads(index=None, days=[3,5], ktype='5', force_retur
         t = threading.Thread(target=ncreate_today_dataset_thread, args=(symbs,start, days, ktype, force_return, ))
         t.start()
         t.join()
+
+    #删除空的元组
+    for d in days:
+        if len(data_all.get(d))==0:
+            data_all.pop(d)
 
     end_time = datetime.datetime.now()
     print ("[ Finish create data set] of " + str(count) + " stocks, elapsed time:" + str(end_time - start_time))
@@ -663,34 +554,35 @@ def ncreate_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', forc
             traceback.print_exc()
             continue
 
-        length = len(dff)
         for d in days:
-            if dff is not None and length > knum * (d + 1):
-                df = dff[dff['date'] > start]
-                df = df.set_index('date')
-                residual = len(df) % knum
-                if residual > 0:
-                    for i in range(knum - residual):
-                        df = df.append(df.iloc[-1:])
-
-                # 近日复牌或停牌数据，跳过
-                if len(df) < knum * (d + 1):
-                    continue
-
-                df = df.iloc[-int((d + 1) * knum):]
-                df.fillna(method='bfill')
-                df.fillna(method='ffill')
-
-                dclose = np.array(df.ix[knum - 1::knum, 'close'])
-                # 当天涨停，无法进行买入操作，删除此类案例
-                if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
-                    continue
-                ddate = df.index[::knum]
-                datall = np.array(df.ix[:, features])
-            else:
+            if dff is None or len(dff) <= knum * d:
                 continue
 
-            nowcell = datall[knum:(1 + d) * knum]
+            df = dff[dff['date'] > start]
+            df = df.set_index('date')
+
+            # 近日复牌或停牌数据，跳过
+            if len(df) < knum * d:
+                continue
+
+            residual = len(df) % knum
+
+            if len(df) == len(dff):
+                residual = residual - 2
+
+            if residual > 0:
+                for i in range(knum - residual):
+                    df = df.append(df.iloc[-1:])
+
+            ddate = df.index[::knum]
+            dclose = np.array(df.ix[len(df) % knum - 1::knum, 'close'])
+            # 当天涨停，无法进行买入操作，删除此类案例
+            if (dclose[d] - dclose[d - 1]) / dclose[d - 1] > 0.099:
+                continue
+
+            df.fillna(method='bfill')
+            df.fillna(method='ffill')
+            nowcell = np.array(df.ix[- d * knum:, features])
 
             # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
             for k in range(d):
@@ -717,13 +609,15 @@ def ncreate_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', forc
                 pass
 
             bsdata = np.array(int(symb))
-            high = float(max(df.ix[:-48, 'high']))
+            high = float(max(df.ix[-48:, 'high']))
             open = float(df.ix[-48, 'open'])
             close = float(df.ix[-1, 'close'])
-            low = float(min(df.ix[:-48, 'low']))
+            low = float(min(df.ix[-48:, 'low']))
             # lbdata=[date, code, open, high, close, low]
             ldata = [intdate(mydate(ddate[d].split(' ')[0])), int(symb), open, high, close, low]
+
             data_cell = [bsdata, nowcell, np.array(ldata)]
+            data_all.get(d).append(data_cell)
 
             if mutex.acquire():
                 data_all.get(d).append(data_cell)
@@ -786,6 +680,10 @@ def create_feeddata(dataset, copies=1):
     :return: tuple of (bsdata, tsdata, lbdata)
     """
     print ("[ create_feeddata]...")
+
+    if len(dataset) == 0:
+        return None, None, None
+
     data = dataset
     for j in range(copies-1):
         dataset.extend(data)
