@@ -4,15 +4,19 @@ from __future__ import absolute_import
 
 import json
 import sys
+import os
 from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 from SocketServer import TCPServer
 
 from keras.callbacks import TensorBoard
 from keras.models import load_model
-from keras.utils import plot_model
 
-from DM import *
-from ModelManager import *
+from data import *
+from model import *
+from model_utils import *
+
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.models import Sequential, save_model
 
 
 def parse_params(mstr):
@@ -74,8 +78,8 @@ def ntrain_model(mstr, start, mid, end):
     if __debug__:
         index = ['basic']
 
-    dataset = ncreate_dataset(days=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
-    test = ncreate_dataset(index=index, days=params['lookback'], start=mid, end=end, ktype=params['ktype'])
+    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
+    test = create_dataset_from_db(index=index, step=params['lookback'], start=mid, end=end, ktype=params['ktype'])
 
     train, val = split_dataset(dataset, 0.75, params['batch_size'], 1535712851.0)
     bstrain, tstrain, lbtrain_v = create_feeddata(train)
@@ -122,23 +126,7 @@ def ntrain_model(mstr, start, mid, end):
     model.summary()
     model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'], validation_data=(val_x, val_y), callbacks=callbacks)
     save_model(model, path + '/model.h5')
-
-    # if params['catf'] == 'noncatf':
-    #     return None
-    # else:
-    #     print ('使用最优模型进行预测')
-    #     model = load_model(path + '/best_model.h5', custom_objects=params['cmetrics'])
-    #     proba = model.predict_proba(test_x, verbose=0, batch_size=params['batch_size'])
-    #
-    #     out = np.hstack([proba, test_y_v])
-    #     sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
-    #     if not __debug__:
-    #         np.savetxt(path + "/val_result.txt", sortout, fmt='%f')
-    #
-    #     print_dist_cut(sortout, proba.shape[-1] - 1, labelcol, 20, path)
-    #     print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
     print ("[ End train model ]")
-    # return sortout
 
 
 def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
@@ -176,10 +164,10 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
         mid_str = mid_dt.strftime('%Y-%m-%d')
         end_str = end_dt1.strftime('%Y-%m-%d')
 
-        dataset = ncreate_dataset(index=index, days=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
-        test = ncreate_dataset(index=index, days=params['lookback'], start=mid_str, end=end_str, ktype=params['ktype'])
+        dataset = create_dataset_from_db(index=index, step=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
+        test = create_dataset_from_db(index=index, step=params['lookback'], start=mid_str, end=end_str, ktype=params['ktype'])
 
-        # dataset = ncreate_dataset(index=None,days=params['lookback'], start=start, end=end, ktype=params['ktype'])
+        # dataset = ncreate_dataset(index=None,step=params['lookback'], start=start, end=end, ktype=params['ktype'])
         # train, test = split_dataset(dataset, 0.75, params['batch_size'])
 
         train, val = split_dataset(dataset, 0.75, params['batch_size'])
@@ -281,7 +269,7 @@ def nvalid_model_merge(path='./models/verified_models/', start=(datetime.date.to
             labcol_map = {'close': -3, 'min': -2, 'max': -1}
             labelcol = labcol_map[params['label']]
 
-            dataset = ncreate_dataset(index=['gem','sme'],days=params['lookback'], start=start, end=end, ktype=params['ktype'])
+            dataset = create_dataset_from_db(index=['gem','sme'],step=params['lookback'], start=start, end=end, ktype=params['ktype'])
             bs, ts, lb_v = create_feeddata(dataset)
             y = eval(params['catf'])(lb_v[:, labelcol])
             sz = len(y) // params['batch_size'] * params['batch_size']
@@ -328,8 +316,8 @@ def ntrain_lrmodel(mstr, start, mid, end):
     if __debug__:
         index = ['debug']
 
-    dataset = ncreate_dataset(days=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
-    test = ncreate_dataset(index=index, days=params['lookback'], start=mid, end=end, ktype=params['ktype'])
+    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
+    test = create_dataset_from_db(index=index, step=params['lookback'], start=mid, end=end, ktype=params['ktype'])
 
     train, val = split_dataset(dataset, 0.75, params['batch_size'])
     bstrain, tstrain, lbtrain_v = create_feeddata(train)
@@ -427,7 +415,7 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
         start_str = start_dt.strftime('%Y-%m-%d')
         mid_str = mid_dt.strftime('%Y-%m-%d')
 
-        test = ncreate_dataset(index=index, days=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
+        test = create_dataset_from_db(index=index, step=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
         if len(test) == 0:
             start_dt = next_n_busday(start_dt, 1)
             mid_dt = next_n_busday(mid_dt, 1)
@@ -486,7 +474,7 @@ def predict_today2(mstrs, runs, force_return=False, mname='best_model.h5'):
         params = parse_params(mstrs[i])
         models_days[mstrs[i]] = params['lookback']
     days=list(set(models_days.values()))
-    dataset = ncreate_today_dataset2(index=index, days=days,force_return=force_return)
+    dataset = create_today_dataset(index=index, days=days,force_return=force_return)
 
     candidates={}
     for i in range(len(mstrs)):
@@ -599,6 +587,7 @@ if __name__ == '__main__':
         _main_()
         exit(0)
     except:
+        traceback.print_exc()
         exit(1)
     # M1T5C3_D1()
     # predict_today()

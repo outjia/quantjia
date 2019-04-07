@@ -23,7 +23,7 @@ import tushare as ts
 from business_calendar import Calendar
 from keras.utils import np_utils
 from sklearn import preprocessing
-from sqlalchemy import create_engine
+
 import threading
 
 ffeatures = ['pe', 'outstanding', 'totals', 'totalAssets', 'liquidAssets', 'fixedAssets', 'reserved',
@@ -236,8 +236,6 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
         basics = get_basic_data()
         symbols = int2str(list(basics.index))
     else:
-        # for i in index:
-        #     symbols.extend(list(get_index_list(i).code))
         basics = get_basic_data()
         all = list(basics.index)
         if 'basic' in index:
@@ -332,6 +330,9 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
 
             # reshape to [days, knum, cols]
             # nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
+
+            # 由于交易中无法获取当天真正的收盘价，而是以上一个k5数据作为最后一个5min的k线数据，所以修改测试数据和交易数据一致
+            nowcell[-1,:] = nowcell[-2,:]
 
             if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
                 print ('*' * 50)
