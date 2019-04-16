@@ -8,6 +8,7 @@ import matplotlib as plt
 import numpy as np
 from business_calendar import Calendar
 from keras.utils import np_utils
+import pandas as pd
 
 hdays = ['2013-01-01', '2013-01-02', '2013-01-03', '2013-05-01', '2013-05-02', '2013-05-03', '2013-10-01', '2013-10-02', '2013-10-03', '2013-10-04', '2013-10-05', '2013-10-06',
          '2013-10-07',
@@ -159,6 +160,10 @@ def catf4(data):
     return data_y
 
 
+def get_stats(group):
+    return {'min':group.min(),'max':group.max(),'count':group.count(),'mean':group.mean()}
+
+
 def plot_out(sortout, x_index, y_index, points=200):
     step = len(sortout) / points
     plot_data = []
@@ -173,6 +178,29 @@ def plot_out(sortout, x_index, y_index, points=200):
         plt.plot(x, y, 'ro')
         i += 1
     plt.show()
+
+
+def print_dist(proba, sortcol, labelcol, b=10.0):
+    # print mean p_change of the proba result
+    bins = np.arange(0, 1, 1 / float(b))
+    labels = bins.searchsorted(proba[:, sortcol])
+    grouped = pd.Series(proba[:, labelcol]).groupby(labels)
+    print (grouped.apply(get_stats).unstack())
+    if dir is not None:
+        pass
+        # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv("./models/" + dir + "/dist.txt")
+    # end print
+
+
+def print_dist_cut(proba, sortcol, labelcol, b=10.0, dir=None):
+    # print mean p_change of the proba result
+    factor = pd.cut(proba[:, sortcol], b)
+    grouped = pd.Series(proba[:, labelcol]).groupby(factor)
+    print (grouped.apply(get_stats).unstack())
+    if dir is not None:
+        # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv(dir + "/dist.txt")
+        pass
+    # end print
 
 
 def equals_list(list1, list2):

@@ -66,7 +66,7 @@ def parse_params(mstr):
     return params
 
 
-def ntrain_model(mstr, start, mid, end):
+def ntrain_model(mstr, start, end):
     params = parse_params(mstr)
     print ("[ train model ]... " + mstr)
 
@@ -76,15 +76,13 @@ def ntrain_model(mstr, start, mid, end):
     # index = ['sme', 'gem']
     index = None
     if __debug__:
-        index = ['basic']
+        index = ['debug']
 
-    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
-    test = create_dataset_from_db(index=index, step=params['lookback'], start=mid, end=end, ktype=params['ktype'])
+    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=end, ktype=params['ktype'])
 
-    train, val = split_dataset(dataset, 0.75, params['batch_size'], 1535712851.0)
+    train, val = split_dataset(dataset, 0.75, params['batch_size'])
     bstrain, tstrain, lbtrain_v = create_feeddata(train)
     bsval, tsval, lbval_v = create_feeddata(val)
-    bstest, tstest, lbtest_v = create_feeddata(test)
 
     train_x = tstrain
     train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
@@ -96,35 +94,26 @@ def ntrain_model(mstr, start, mid, end):
     val_x = tsval
     val_y = eval(params['catf'])(lbval_v[:, labelcol])
 
-    sz = len(lbtest_v) // params['batch_size'] * params['batch_size']
-    test_x = tstest[:sz]
-    test_y = eval(params['catf'])(lbtest_v[:sz, labelcol])
-    test_y_v = lbtest_v[:sz]
-
-    params['indim'] = train_x.shape[train_x.ndim - 1]
-
-    path = 'models/' + params['mclass'] + '/' + params['model_name']
-    model_dir = os.path.dirname(path)
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
-
     if __debug__:
         patience = 10
     else:
         patience = 200
 
-    logdir = datetime.datetime.now().strftime(path + '/S' + start + '.%Y%m%d.%H.%M.%S.run')
-    if not os.path.exists(logdir): os.makedirs(logdir)
-    path = logdir
+    path = 'models/' + params['mclass'] + '/' + params['model_name']
+    path = datetime.datetime.now().strftime(path + '/S' + start + '.%Y%m%d.%H.%M.%S.run')
+    if not os.path.exists(path): os.makedirs(path)
 
     callbacks = [
         EarlyStopping(monitor='val_top_t1p1', patience=patience, verbose=0, mode='max'),
         ModelCheckpoint(path + '/weights.{epoch:02d}-{val_top_t1p1:.2f}.hdf5', monitor='val_' + params['main_metric'].keys()[0], period=10, verbose=0, mode='max'),
         TensorBoard(log_dir=path + '/tensorboard_logs', histogram_freq=0, write_graph=True, write_images=False),
     ]
+
+    params['indim'] = train_x.shape[train_x.ndim - 1]
     model = eval(params['model'])(params)
     print ("model summary")
     model.summary()
-    model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'], validation_data=(val_x, val_y), callbacks=callbacks)
+    model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'], validation_data=(val_x,val_y), shuffle=True, callbacks=callbacks)
     save_model(model, path + '/model.h5')
     print ("[ End train model ]")
 
@@ -300,85 +289,6 @@ def nvalid_model_merge(path='./models/verified_models/', start=(datetime.date.to
     print (grouped.apply(get_stats).unstack())
 
 
-def get_stats(group):
-    return {'min':group.min(),'max':group.max(),'count':group.count(),'mean':group.mean()}
-
-
-def ntrain_lrmodel(mstr, start, mid, end):
-    params = parse_params(mstr)
-    print ("[ train model ]... " + mstr)
-
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
-    labelcol = labcol_map[params['label']]
-    index = ['sme','gem']
-    # index = ['sme']
-    # index = None
-    if __debug__:
-        index = ['debug']
-
-    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=mid, ktype=params['ktype'])
-    test = create_dataset_from_db(index=index, step=params['lookback'], start=mid, end=end, ktype=params['ktype'])
-
-    train, val = split_dataset(dataset, 0.75, params['batch_size'])
-    bstrain, tstrain, lbtrain_v = create_feeddata(train)
-    bsval, tsval, lbval_v = create_feeddata(val)
-    bstest, tstest, lbtest_v = create_feeddata(test)
-
-    train_x = tstrain
-    train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
-    # train_y, train_x, tmp = balance_data(train_y, train_x)
-    sz = len(train_y) // params['batch_size'] * params['batch_size']
-    train_x = train_x[:sz]
-    train_y = train_y[:sz]
-
-    val_x = tsval
-    val_y = eval(params['catf'])(lbval_v[:, labelcol])
-
-    sz = len(lbtest_v) // params['batch_size'] * params['batch_size']
-    test_x = tstest[:sz]
-    test_y = eval(params['catf'])(lbtest_v[:sz, labelcol])
-    test_y_v = lbtest_v[:sz]
-
-    params['indim'] = train_x.shape[train_x.ndim - 1]
-
-    path = 'models/' + params['mclass'] + '/' + params['model_name']
-    model_dir = os.path.dirname(path)
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
-
-    if __debug__:
-        patience = 2
-    else:
-        patience = 200
-
-    logdir = datetime.datetime.now().strftime(path + '/S' + start + '.%Y%m%d.%H.%M.%S.run')
-    if not os.path.exists(logdir): os.makedirs(logdir)
-    path = logdir
-
-    callbacks = [
-        EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode='min'),
-        ModelCheckpoint(path + '/best_model.h5', monitor='val_loss', save_best_only=True, verbose=0, mode='min'),
-        TensorBoard(log_dir=path, histogram_freq=0, write_graph=True, write_images=False),
-    ]
-    model = eval(params['model'])(params)
-    print ("model summary")
-    model.summary()
-    model.fit(train_x, train_y, batch_size=params['batch_size'], epochs=params['epoch'], validation_data=(val_x, val_y), callbacks=callbacks)
-    save_model(model, path + '/model.h5')
-
-    print ('使用最优模型进行预测')
-    model = load_model(path + '/best_model.h5')
-    proba = model.predict(test_x, verbose=0, batch_size=params['batch_size'])
-
-    out = np.hstack([proba, test_y_v])
-    sortout = out[(-out[:, proba.shape[-1] - 1]).argsort(), :]
-    if not __debug__:
-        np.savetxt(path + "/best_model." + start + "." + end + ".txt", sortout, fmt='%f')
-
-    print_dist_cut(sortout, proba.shape[-1] - 1, labelcol, 20, path)
-    print_dist(sortout, proba.shape[-1] - 1, labelcol, 10)
-    print ("[ End train model ]")
-
-
 def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
     params = parse_params(mstr)
     print ("[ valid model ]... " + mstr)
@@ -529,29 +439,6 @@ def predict_today_rpc2_test(jsonstr, force_return=False):
     return df.to_json()
 
 
-def print_dist(proba, sortcol, labelcol, b=10.0):
-    # print mean p_change of the proba result
-    bins = np.arange(0, 1, 1 / float(b))
-    labels = bins.searchsorted(proba[:, sortcol])
-    grouped = pd.Series(proba[:, labelcol]).groupby(labels)
-    print (grouped.apply(get_stats).unstack())
-    if dir is not None:
-        pass
-        # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv("./models/" + dir + "/dist.txt")
-    # end print
-
-
-def print_dist_cut(proba, sortcol, labelcol, b=10.0, dir=None):
-    # print mean p_change of the proba result
-    factor = pd.cut(proba[:, sortcol], b)
-    grouped = pd.Series(proba[:, labelcol]).groupby(factor)
-    print (grouped.apply(get_stats).unstack())
-    if dir is not None:
-        # pd.DataFrame(grouped.apply(get_stats).unstack()).to_csv(dir + "/dist.txt")
-        pass
-    # end print
-
-
 def start_service():
     TCPServer.request_queue_size = 10
 
@@ -559,10 +446,6 @@ def start_service():
     server = SimpleXMLRPCServer(('127.0.0.1', 8080), SimpleXMLRPCRequestHandler, True)
     server.register_function(predict_today_rpc2, "predict_today_rpc2")
     server.serve_forever()
-    # _main_()
-    # predict_today('MR_T2_B256_C2_E1000_Lclose_K5_XSGD', 'S2016-01-01.20181009.11.29.52.run')
-    # M1T5C3_D1()
-    # predict_today()
 
 
 def _main_():
