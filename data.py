@@ -76,9 +76,9 @@ def refresh_kdata(ktype='5'):
                         "(stmp, code, open, close, high, low, vol, amt, tor, vr) " \
                         "select `datetime`,code, open, close, high, low, vol, amount, tor, vr " \
                         "from " + tmp_table
-            df = pd.read_csv('./data/k5_data/' + symb + '.csv', dtype={'code': str})
+            # df = pd.read_csv('./data/k5_data/' + symb + '.csv', dtype={'code': str})
 
-            # df = ts.get_k_data(code=symb, start='2010-01-01', end='', ktype=ktype, autype='qfq')
+            df = ts.get_k_data(code=symb, start='2010-01-01', end='', ktype=ktype, autype='qfq')
             if df is not None and len(df) > 0:
                 df.amount = 0
                 df.to_sql(tmp_table, engine, if_exists='append', index=False)
@@ -257,17 +257,11 @@ def create_cell_data(symb, df, ktype, step, start, end):
                 traceback.print_exc()
             pass
 
-        # reshape to [days, knum, cols]
-        # nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
-
         # 由于交易中无法获取当天真正的收盘价，而是以上一个k5数据作为最后一个5min的k线数据，所以修改测试数据和交易数据一致
         nowcell[-1, :] = nowcell[-2, :]
 
-        if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
-            print ('*' * 50)
-            print (lbdata)
-            print ('*' * 50)
-            continue
+        # reshape to [days, knum, cols]
+        # nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
 
         bsdata = np.array(int2date(str2date(ddate[i + step].split(' ')[0])))
 

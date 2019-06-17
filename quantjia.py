@@ -11,7 +11,7 @@ from keras.callbacks import TensorBoard
 from keras.models import load_model
 from keras.utils import plot_model
 
-from DM import *
+from DataManager import *
 from ModelManager import *
 
 
@@ -66,7 +66,7 @@ def ntrain_model(mstr, start, mid, end):
     params = parse_params(mstr)
     print ("[ train model ]... " + mstr)
 
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
+    labcol_map = {'close2': -5, 'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     # index = ['basic']
     # index = ['sme', 'gem']
@@ -395,7 +395,7 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
     params = parse_params(mstr)
     print ("[ valid model ]... " + mstr)
 
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
+    labcol_map = {'close2': -5, 'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     # index = ['sme', 'gem']
     index = ['basic']
@@ -403,7 +403,6 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
     if __debug__:
         index = ['debug']
 
-    params = parse_params(mstr)
     path = 'models/' + params['mclass'] + '/' + params['model_name']
     if run is not None:
         path = path + '/' + run+'/'

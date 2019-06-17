@@ -405,6 +405,7 @@ def predict_today2(mstrs, runs, force_return=False, mname='best_model.h5'):
         lb = lb[:sz]
 
         proba = model.predict_proba(ts, verbose=0, batch_size=params['batch_size'])
+
         out = np.hstack([proba, lb])
         sortout = out[(-out[:, proba.shape[proba.ndim - 1] - 1]).argsort(), :]
 

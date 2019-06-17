@@ -294,7 +294,7 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
             min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
             cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
             c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
-            cls2price = (nxt2close - nowclose) / nowclose * 100
+            cls2price = max(min((nxt2close - nowclose) / nowclose * 100, 20), -20)
 
             # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
             # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
