@@ -21,7 +21,7 @@ def parse_params(mstr):
     # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, label = 'min', mem = 'gem'
 
     catf = {'C3':'catf3', 'C4':'catf4', 'C2':'catf2','C22':'catf22', 'C31':'catf31','C32':'catf32','C1':'noncatf'}
-    models = {'M1':'build_model', 'M2':'build_model2', 'M3':'build_model3', 'M4':'build_model4', 'M5':'build_model5', 'MK':'build_cmodel','MC':'build_cmodel','MR':'build_rmodel'}
+    models = {'M1':'build_model', 'MK':'build_cmodel','MC':'build_cmodel','MR':'build_rmodel', 'MC2':'build_cmodel2'}
     params = {}
     params['mclass'] = ''
     params['model_name'] = mstr
@@ -69,7 +69,7 @@ def ntrain_model(mstr, start, mid, end):
     labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
-    # index = None
+    index = None
     if __debug__:
         index = ['debug']
 
@@ -172,7 +172,7 @@ def ntrain_model2(mstr, start, end, step=30):
     result_data = []
     path_m = path
     while mid_dt < end_dt:
-        start_str =  start_dt.strftime('%Y-%m-%d')
+        start_str = start_dt.strftime('%Y-%m-%d')
         mid_str = mid_dt.strftime('%Y-%m-%d')
         end_str = end_dt1.strftime('%Y-%m-%d')
 
@@ -295,15 +295,34 @@ def nvalid_model(mstr, run=None, start=(datetime.date.today() - timedelta(days=6
     # return sortout
 
 
-def predict_batch():
+def print_result(mstr):
     file = os.path.realpath(__file__)
     os.chdir(os.path.dirname(file))
-    print (os.path.dirname(file))
-    path = "./models/confirm/"
-    for model in os.listdir(path):
-        if os.path.isdir(path+model):
-            if os.path.exists(path+model + '/model.h5'):
-                predict_today(model, path)
+
+    params = parse_params(mstr)
+    labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
+    labelcol = labcol_map[params['label']]
+
+    path = './models/'+params['mclass']+'/'+params['model_name']+'/'
+    for run in os.listdir(path):
+        if run.find('20180915') > -1 or run.find('20180915') > -1: pass
+        else:continue
+        if os.path.isdir(path+run):
+            if os.path.exists(path+run + '/best_model.h5'):
+                model = load_model(path+run+ '/best_model.h5', custom_objects=params['cmetrics'])
+                print "model summary"
+                model.summary()
+                break
+    for run in os.listdir(path):
+        if run.find('20180915') > -1 or run.find('20180916') > -1: continue
+        else:pass
+        print run
+        if os.path.isdir(path+run):
+            file = path + run + '/val_result.txt'
+            if os.path.exists(file):
+                data = np.loadtxt(file)
+                print_dist(data, 1, labelcol, 10)
+                print_dist(data, 1, labelcol, 2)
 
 
 def predict_today(mstr, path='./models/'):

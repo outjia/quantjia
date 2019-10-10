@@ -22,6 +22,7 @@ from datetime import date
 from datetime import timedelta
 from sklearn import preprocessing
 import keras.backend as K
+import random
 
 from keras.utils import np_utils
 import tushare.util.dateu as dateu
@@ -219,7 +220,11 @@ def refresh_kdata(start='2015-01-01', ktype='5', force=False):
     basics = ts.get_stock_basics()
     basics.to_csv('./data/basics.csv')
     failed_symbols = []
-    for symb in list(basics.index):
+    symbs = list(basics.index)
+    # if random.randint()//2==1:
+    symbs.reverse()
+    
+    for symb in symbs:
         file = path + symb + '.csv'
         try:
             df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
@@ -372,12 +377,13 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
                     j = j + 1
                 if 'tor' in features:
                     # 归一化换手率
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
                     j = j + 1
                 if 'vr' in features:
                     # 归一化量比
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
+                    nowcell[:, j] = minmax_scale(nowcell[:, j])
             except:
+                traceback.print_exc()
                 pass
 
             # reshape to [days, knum, cols]
@@ -400,14 +406,18 @@ def ncreate_dataset(index=None, days=3, start=None, end=None, ktype='5'):
     return data_all
 
 
-def ncreate_dataset_online(index=None, days=3, start=None, end=None, ktype='5'):
-    print ("[ create_dataset_online]... of stock category %s with previous %i days" % (index, days))
+def ncreate_today_dataset(index=None, days=3, start=None, ktype='5', online=False, today=False):
+    print ("[ create_dataset]... of stock category %s with previous %i days" % (index, days))
 
-    features = ['open', 'close', 'high', 'low', 'tor']#, 'vr']
+    start_time = datetime.datetime.now()
+
+    features = ['open', 'close', 'high', 'low', 'volume']#, 'vr']
 
     sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
-    start = (sdate - timedelta(days=days / 5 * 2 + days)).strftime('%Y-%m-%d')
+    start = (sdate - timedelta(10 + days)).strftime('%Y-%m-%d')
     path = './data/k' + ktype + '_data/'
+
+    if online is not None: cons = ts.get_apis()
 
     symbols = []
     if index is None or len(index) == 0:
@@ -421,20 +431,46 @@ def ncreate_dataset_online(index=None, days=3, start=None, end=None, ktype='5'):
     knum = 240 // int(ktype)
 
     data_all = []
+    count = 0
     for symb in symbols:
+        # 超过下午2点57，立即返回，以便后续进行买卖操作
+        if datetime.datetime.now().time() > datetime.time(14,57,0):
+            break;
+
+        count=count+1
         try:
-            df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
-            if df is not None and len(df) > 0:
-                df = df[end:start]
-                df = df.iloc[0:int(len(df) // knum * knum)]
+            if online is True:
+                try:
+                    df = ts.get_k_data(symb, ktype='5', start='2018-10-19')
+                    # df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
+                except:
+                    print ("Exception when processing index:" + symb)
+                    traceback.print_exc()
+                    continue
+            else:
+                df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
+
+            length = len(df)
+            if df is not None and length > knum*days:
+                residual = length%knum
+                if residual > 0:
+                    for i in range(knum - residual):
+                        df = df.iloc[0:1].append[df]
+                # df = df[end:start]
+                if today is True:
+                    df = df.iloc[0:int((days+1) * knum)]
+                else:
+                    df = df.iloc[0:int(length // knum * knum)]
                 df.fillna(method='bfill')
                 df.ix[:,'vr'].fillna(value=1.0)
                 df.fillna(method='ffill')
                 if index is not None: df = df  # .join(idx_df)
 
-            dclose = np.array(df.ix[-knum::-knum, 'close'])
-            ddate = df.index[-knum::-knum]
-            datall = np.array(df.ix[::-1, features])
+                dclose = np.array(df.ix[-knum::-knum, 'close'])
+                ddate = df.index[-knum::-knum]
+                datall = np.array(df.ix[::-1, features])
+            else:
+                continue
         except:
             if __debug__:
                 traceback.print_exc()
@@ -443,70 +479,50 @@ def ncreate_dataset_online(index=None, days=3, start=None, end=None, ktype='5'):
                 pass
             continue
 
-        # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
-        for i in range(1, len(df) // knum - days):
-            nowcell = np.array(datall[i * knum:(i + days) * knum])
+        nowcell = np.array(datall[knum:(days+1) * knum])
 
-            # 当天涨停，无法进行买入操作，删除此类案例
-            if (dclose[i + days - 1] - dclose[i + days - 2]) / dclose[i + days - 2] > 0.099:
-                continue
+        # 当天涨停，无法进行买入操作，删除此类案例
+        if (dclose[days] - dclose[days - 1]) / dclose[days-1] > 0.099:
+            continue
 
-            # nowcell里的最后一个收盘价
-            nowclose = nowcell[-1, 1]
+        # nowcell里的最后一个收盘价
+        nowclose = nowcell[-1, 1]
 
-            nxtcell = np.array(datall[(i + days) * knum:(i + days + 1) * knum])
-            max_price = min((max(nxtcell[:, 2]) - nowclose) / nowclose * 100, 10)
-            min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
-            cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
-            c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
+        # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
+        for k in range(days):
+            nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[k]) / dclose[k] * 10 + K.epsilon()
 
-            # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
-            # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
+        # 异常数据，跳过
+        if abs(nowcell[:, 0:4].any()) > 1.1:
+            continue
 
-            # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
-            for k in range(days):
-                nowcell[k * knum:(k + 1) * knum, 0:4] = (nowcell[k * knum:(k + 1) * knum, 0:4] - dclose[i + k - 1]) / dclose[i + k - 1] * 10 + K.epsilon()
+        try:
+            j = 4
+            if 'volume' in features:
+                # 归一化成交量
+                nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
+                j = j + 1
+            if 'tor' in features:
+                # 归一化换手率
+                nowcell[:, j] = minmax_scale(nowcell[:, j])
+                j = j + 1
+            if 'vr' in features:
+                # 归一化量比
+                nowcell[:, j] = minmax_scale(nowcell[:, j])
+        except:
+            traceback.print_exc()
+            pass
 
-            # 异常数据，跳过
-            if abs(nowcell[:, 0:4].any()) > 1.1:
-                continue
+        # reshape to [days, knum, cols]
+        nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
 
-            # 过去days天股价变化总和，范围[-10*days, +10*days]
-            pchange_days = float(nowcell[-1, 1] * 10)
+        bsdata = np.array(intdate(mydate(str(ddate[days]).split(' ')[0])))
 
-            try:
-                j = 4
-                if 'vol' in features:
-                    # 归一化成交量
-                    nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
-                    j = j + 1
-                if 'tor' in features:
-                    # 归一化换手率
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
-                    j = j + 1
-                if 'vr' in features:
-                    # 归一化量比
-                    nowcell[:, j] = minmax_scale(nowcell[:, j], copy=False)
-            except:
-                pass
+        data_cell = [bsdata, nowcell]
+        data_all.append(data_cell)
 
-            # reshape to [days, knum, cols]
-            nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
-
-            if (abs(max_price) > 11 or abs(min_price) > 11) and __debug__:
-                print ('*' * 50)
-                print (lbdata)
-                print ('*' * 50)
-                continue
-
-            bsdata = np.array(intdate(mydate(ddate[i + days].split(' ')[0])))
-
-            # lbadata [日期，股票代码，最低价，最高价,pchange_days, c2o, cls, min, max]
-            lbdata = [intdate(mydate(ddate[i + days].split(' ')[0])), int(symb), min(nxtcell[:, 3]), max(nxtcell[:, 2]), pchange_days, c2o_price, cls_price, min_price, max_price]
-
-            data_cell = [bsdata, nowcell, np.array(lbdata)]
-            data_all.append(data_cell)
-    print ("[ Finish create data set]")
+    end_time = datetime.datetime.now()
+    print ("[ Finish create data set] of "+str(count)+" stocks, elapsed time:"+str(end_time-start_time))
     return data_all
 
 
@@ -534,6 +550,7 @@ def get_newly_kdata(ktype='5', days=30, inc=True):
 
     for symb in symbols:
         try:
+
             df = ts.bar(symb, conn=cons, adj='qfq', factors=['vr', 'tor'], freq=ktype + 'min', start_date=start, end_date='')
         except:
             print ("Exception when processing " + symb)
@@ -697,9 +714,9 @@ def main():
     # print data
     refresh_kdata(force=True)
     # test_plot(None)
-    # ncreate_dataset(start='2016-01-01')
-
-
+    # ncreate_today_dataset(index=['debug'], start='2018-10-01',online=True,today=True)
+    # ncreate_today_dataset(index=['sme'], start='2018-10-01',online=True,today=True)
+    exit()
 #     get_history_data(4000, start='2005-01-01', end=None, index=None)
 # #    get_newly_data2('2016-01-01', 10)
 #    pass
@@ -712,6 +729,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+    exit()
 
 """
 import DataManager as dm

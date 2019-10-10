@@ -116,7 +116,7 @@ def build_cmodel(params):
     rows = params['lookback']
 
     model = Sequential()
-    model.add(Conv2D(64,(2,2), strides=(2, 2),input_shape=(rows, cols, channels),data_format = 'channels_last'))
+    model.add(Conv2D(32,(2,2), strides=(2, 2),input_shape=(rows, cols, channels),data_format = 'channels_last'))
     # model.add(AveragePooling2D(pool_size=2, strides=2))
     model.add(Dropout(0.5))
     model.add(Activation('relu'))
@@ -128,6 +128,38 @@ def build_cmodel(params):
     model.add(Activation('softmax'))
     sdg = SGD(lr=0.01, decay=1e-4, momentum=0.8, nesterov=True)
     model.compile(loss='categorical_crossentropy', optimizer=sdg,
+                  metrics=params['metrics'])
+    print("Finish building model")
+    return model
+
+
+def build_cmodel2(params):
+    """
+    The function builds a keras Sequential model
+    :param lookback: number of previous time steps as int
+    :param batch_size: batch_size as int, defaults to 1
+    :return: keras Sequential model
+    """
+    K.set_image_dim_ordering('th')
+    print ("[ build_model ]... with params" + str(params))
+    channels = params['indim']
+    output_dim = params['outdim']
+    cols = 240//int(params['ktype'])
+    rows = params['lookback']
+
+    model = Sequential()
+    model.add(Conv2D(8,(2,2), strides=(2, 2),input_shape=(rows, cols, channels),data_format = 'channels_last'))
+    # model.add(AveragePooling2D(pool_size=2, strides=2))
+    model.add(Dropout(0.5))
+    model.add(Activation('relu'))
+    # model.add(Conv2D(4,(2,2),data_format='channels_last',padding="same"))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(4, activation='tanh'))
+    model.add(Dense(output_dim))
+    model.add(Activation('softmax'))
+    # sdg = SGD(lr=0.01, decay=1e-6, momentum=0.8, nesterov=True)
+    model.compile(loss='categorical_crossentropy', optimizer='sgd',
                   metrics=params['metrics'])
     print("Finish building model")
     return model
