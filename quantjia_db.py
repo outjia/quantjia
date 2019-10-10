@@ -3,82 +3,34 @@
 from __future__ import absolute_import
 
 import json
-import sys
 import os
 from SimpleXMLRPCServer import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
 from SocketServer import TCPServer
 
 from keras.callbacks import TensorBoard
 from keras.models import load_model
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.models import save_model
 
+from utils import *
 from data import *
 from model import *
-from model_utils import *
-
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.models import Sequential, save_model
 
 
-def parse_params(mstr):
-    # M1_T5_B256_C3_E100_Lmin_Mgem_K5
-    # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, label = 'min', mem = 'gem'
-
-    catf = {'C3': 'catf3', 'C4': 'catf4', 'C2': 'catf2', 'C22': 'catf22', 'C31': 'catf31', 'C32': 'catf32', 'C1': 'noncatf','C20': 'catf20'}
-    models = {'M1': 'build_model', 'M2': 'build_model2', 'M3': 'build_model3', 'M4': 'build_model4', 'M5': 'build_model5', 'MR': 'nbuild_rmodel', 'MLR': 'nbuild_lrmodel'}
-    params = {}
-    params['mclass'] = ''
-    params['model_name'] = mstr
-    params['metrics'] = ['categorical_accuracy']
-    params['cmetrics'] = {'recall': recall, 'top1_recall': top1_recall, 'top_t1p1': top_t1p1}
-    params['main_metric'] = {'top_t1p1': top_t1p1}
-    params['totals'] = 5
-
-    mstr_arr = str(mstr).upper().split('_')
-    for s in mstr_arr:
-        if s.startswith('M'):
-            params['model'] = models[s]
-            params['mclass'] = params['mclass'] + s
-        if s.startswith('T'):
-            params['lookback'] = int(s[1:])
-        if s.startswith('B'):
-            params['batch_size'] = int(s[1:])
-        if s.startswith('C'):
-            params['catf'] = catf[s]
-            params['mclass'] = params['mclass'] + s[0:2]
-            params['outdim'] = int(s[1:2])
-            if int(s[1:2]) >= 3:
-                params['cmetrics']['top_t2p1'] = top_t2p1
-                # params['cmetrics']['top2_recall'] = top2_recall
-                # params['main_metric'] = {'top_t2p1': top_t2p1}
-            if int(s[1:2]) == 1:
-                params['main_metric'] = {'mse'}
-
-        if s.startswith('E'):
-            params['epoch'] = int(s[1:])
-        if s.startswith('L'):
-            params['mclass'] = params['mclass'] + s
-            params['label'] = s[1:].lower()
-        if s.startswith('M'):
-            params['mem'] = s[1:]
-        if s.startswith('K'):
-            params['ktype'] = s[1:]
-    params['metrics'].extend(params['cmetrics'].values())
-    return params
+labcol_map = {'close2': -5, 'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
 
 
 def ntrain_model(mstr, start, end):
     params = parse_params(mstr)
     print ("[ train model ]... " + mstr)
-
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     # index = ['basic']
-    # index = ['sme', 'gem']
-    index = None
+    index = ['sme','gem']
+    # index = None
     if __debug__:
         index = ['debug']
 
-    dataset = create_dataset_from_db(step=params['lookback'], index=index, start=start, end=end, ktype=params['ktype'])
+    dataset = create_dataset_from_db(mstr, index=index, start=start, end=end)
 
     train, val = split_dataset(dataset, 0.75, params['batch_size'])
     bstrain, tstrain, lbtrain_v = create_feeddata(train)
@@ -118,11 +70,11 @@ def ntrain_model(mstr, start, end):
     print ("[ End train model ]")
 
 
-def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
-    params = parse_params(mstr)
+def ntrain_valid_model(mstr, start, end, train_step=30, val_step=15):
+
     print ("[ train model ]... " + mstr)
 
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
+    params = parse_params(mstr)
     labelcol = labcol_map[params['label']]
     index = None
     # index = ['sme', 'gem']
@@ -153,8 +105,8 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
         mid_str = mid_dt.strftime('%Y-%m-%d')
         end_str = end_dt1.strftime('%Y-%m-%d')
 
-        dataset = create_dataset_from_db(index=index, step=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
-        test = create_dataset_from_db(index=index, step=params['lookback'], start=mid_str, end=end_str, ktype=params['ktype'])
+        dataset = create_dataset_from_db(mstr, index=index, start=start_str, end=mid_str)
+        test = create_dataset_from_db(mstr, index=index, start=mid_str, end=end_str)
 
         # dataset = ncreate_dataset(index=None,step=params['lookback'], start=start, end=end, ktype=params['ktype'])
         # train, test = split_dataset(dataset, 0.75, params['batch_size'])
@@ -227,17 +179,13 @@ def ntrain_model2(mstr, start, end, train_step=30, val_step=15):
     i = 0
     while i < len(result_date):
         print ('================' + result_date[i] + '==================')
-        # print_dist(result_data[i], params['outdim']-1, labelcol, 2)
         print_dist(result_data[i], params['outdim'] - 1, labelcol, 10)
-        # print_dist_cut(result_data[i], params['outdim'], labelcol, 20)
         i += 1
 
     i = 0
     while i < len(result_date):
         print ('================' + result_date[i] + '==================')
         print_dist(result_data[i], params['outdim'] - 1, labelcol, 2)
-        # print_dist(result_data[i], params['outdim']-1, labelcol, 10)
-        # print_dist_cut(result_data[i], params['outdim'], labelcol, 20)
         i += 1
 
     print ("[ End train model ]")
@@ -255,10 +203,10 @@ def nvalid_model_merge(path='./models/verified_models/', start=(datetime.date.to
             print ("model summary")
             model.summary()
 
-            labcol_map = {'close': -3, 'min': -2, 'max': -1}
+            global labcol_map
             labelcol = labcol_map[params['label']]
 
-            dataset = create_dataset_from_db(index=['gem','sme'],step=params['lookback'], start=start, end=end, ktype=params['ktype'])
+            dataset = create_dataset_from_db(mstr, index=['gem','sme'], start=start, end=end)
             bs, ts, lb_v = create_feeddata(dataset)
             y = eval(params['catf'])(lb_v[:, labelcol])
             sz = len(y) // params['batch_size'] * params['batch_size']
@@ -289,11 +237,10 @@ def nvalid_model_merge(path='./models/verified_models/', start=(datetime.date.to
     print (grouped.apply(get_stats).unstack())
 
 
-def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
+def test_model(mstr, run, start, end, step=30, mname='best_model.h5'):
     params = parse_params(mstr)
     print ("[ valid model ]... " + mstr)
 
-    labcol_map = {'o2c': -4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     # index = ['sme', 'gem']
     index = ['basic']
@@ -309,10 +256,10 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
     print ("model summary")
     model.summary()
 
-    test_step = int(test_step)
+    step = int(step)
     start_dt = datetime.datetime.strptime(start, '%Y-%m-%d')
     end_dt = datetime.datetime.strptime(end, '%Y-%m-%d')
-    mid_dt = next_n_busday(start_dt, test_step)
+    mid_dt = next_n_busday(start_dt, step)
 
     result_date = []
     result_data = []
@@ -325,7 +272,7 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
         start_str = start_dt.strftime('%Y-%m-%d')
         mid_str = mid_dt.strftime('%Y-%m-%d')
 
-        test = create_dataset_from_db(index=index, step=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
+        test = create_dataset_from_db(mstr, index=index, start=start_str, end=mid_str)
         if len(test) == 0:
             start_dt = next_n_busday(start_dt, 1)
             mid_dt = next_n_busday(mid_dt, 1)
@@ -354,7 +301,7 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
             result_data.append(sortout)
 
         start_dt = mid_dt
-        mid_dt = next_n_busday(start_dt, test_step)
+        mid_dt = next_n_busday(start_dt, step)
     i = 0
     while i < len(result_date):
         print ('================' + result_date[i] + '==================')
@@ -384,7 +331,14 @@ def predict_today2(mstrs, runs, force_return=False, mname='best_model.h5'):
         params = parse_params(mstrs[i])
         models_days[mstrs[i]] = params['lookback']
     days=list(set(models_days.values()))
-    dataset = create_today_dataset(index=index, days=days,force_return=force_return)
+
+    params = parse_params(mstrs[0])
+    if params['model_name'].startswith('MC'):
+        rc = 'c'
+    else:
+        rc = 'r'
+
+    dataset = create_today_dataset(rc, index=index, days=days,force_return=force_return)
 
     candidates={}
     for i in range(len(mstrs)):
@@ -467,13 +421,6 @@ def _main_():
 
 
 if __name__ == '__main__':
-    try:
-        _main_()
-        exit(0)
-    except:
-        traceback.print_exc()
-        exit(1)
-    # M1T5C3_D1()
-    # predict_today()
-
+    _main_()
+    exit(0)
 

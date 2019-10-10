@@ -22,6 +22,7 @@ from sklearn import preprocessing
 from sqlalchemy import create_engine
 
 from data_utils import *
+from utils import *
 
 st_cat = {'sme': '399005', 'gem': '399006', 'hs300s': '000300', 'sz50s': '000016', 'zz500s': '000008'}
 cons = ts.get_apis()
@@ -72,10 +73,10 @@ def refresh_kdata(ktype='5'):
     for symb in symbols:
         try:
             # 初始化
-            merge_sql = "replace into " + data_table + \
-                        "(stmp, code, open, close, high, low, vol, amt, tor, vr) " \
-                        "select `datetime`,code, open, close, high, low, vol, amount, tor, vr " \
-                        "from " + tmp_table
+            # merge_sql = "replace into " + data_table + \
+            #             "(stmp, code, open, close, high, low, vol, amt, tor, vr) " \
+            #             "select `datetime`,code, open, close, high, low, vol, amount, tor, vr " \
+            #             "from " + tmp_table
             # df = pd.read_csv('./data/k5_data/' + symb + '.csv', dtype={'code': str})
 
             df = ts.get_k_data(code=symb, start='2010-01-01', end='', ktype=ktype, autype='qfq')
@@ -94,8 +95,64 @@ def refresh_kdata(ktype='5'):
     print ("[ end append_data ]")
 
 
-def create_dataset_from_db(index=None, step=3, start=None, end=None, ktype='5'):
-    step = int(step)
+def create_dataset_from_cvs(mstr, index=None, start=None, end=None):
+    params = parse_params(mstr)
+    step = params['lookback']
+    ktype = params['ktype']
+    if params['model_name'].startswith('MC'):
+        # 卷积模型
+        rc = 'c'
+    else:
+        rc = 'r'
+
+    print ("[ ncreate_dataset_from_cvs]... of stock category %s with previous %i days" % (index, step))
+
+    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    start = next_n_busday(sdate, -step - 1).strftime('%Y-%m-%d')
+    end = next_n_busday(end, 3).strftime('%Y-%m-%d')
+    path = './data/k' + ktype + '_data/'
+
+    symbols = []
+    if index is None or len(index) == 0:
+        basics = get_basic_data()
+        symbols = int2str(list(basics.index))
+    else:
+        basics = get_basic_data()
+        all = list(basics.index)
+        if 'basic' in index:
+            symbols.extend([x for x in all if x >= 600000])
+        if 'sme' in index:
+            symbols.extend([x for x in all if 300000 <= x < 600000])
+        if 'gem' in index:
+            symbols.extend([x for x in all if 300000 > x])
+        symbols = int2str(symbols)
+        if 'debug' in index:
+            symbols.extend(list(get_index_list('debug').code))
+        if 'test' in index:
+            debug_df = pd.read_csv("./data/test.csv", index_col=0, dtype={'code': str})
+            symbols.extend(list(debug_df.code))
+
+    data_all = []
+    for symb in symbols:
+        df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
+        data_cells = create_cell_data(rc, symb, df, ktype, step, start, end)
+        data_all.extend(data_cells)
+
+    print ("[ Finish create data set]")
+    return data_all
+
+
+def create_dataset_from_db(mstr, index=None, start=None, end=None):
+    params = parse_params(mstr)
+    step = params['lookback']
+    ktype = params['ktype']
+
+    if params['model_name'].startswith('MC'):
+        rc = 'c'
+    else:
+        rc = 'r'
+
     print ("[ create_dataset]... of stock category %s with previous %i days" % (index, step))
 
     symbols = []
@@ -133,56 +190,15 @@ def create_dataset_from_db(index=None, step=3, start=None, end=None, ktype='5'):
     for symb in symbols:
         sql = "select DATE_FORMAT(stmp,'%%Y-%%m-%%d %%T') as stmp, code, open, close, high, low, vol, amt, tor, vr " \
               "from k5_data where code='" + symb + datesql + " order by stmp desc"
-        # sql = 'select DATE_FORMAT(stmp,"%%Y-%%m-%%d %%T") from k5_data'
         df = pd.read_sql_query(sql=sql, con=engine, index_col='stmp')
-        data_cells = create_cell_data(symb, df, ktype, step, start, end)
+        data_cells = create_cell_data(rc, symb, df, ktype, step, start, end)
         data_all.extend(data_cells)
 
     print ("[ Finish create data set]")
     return data_all
 
 
-def create_dataset_from_cvs(index=None, step=3, start=None, end=None, ktype='5'):
-    step = int(step)
-    print ("[ ncreate_dataset_from_cvs]... of stock category %s with previous %i days" % (index, step))
-
-    sdate = datetime.datetime.strptime(start, '%Y-%m-%d')
-    end = datetime.datetime.strptime(end, '%Y-%m-%d')
-    start = next_n_busday(sdate, -step - 1).strftime('%Y-%m-%d')
-    end = next_n_busday(end, 3).strftime('%Y-%m-%d')
-    path = './data/k' + ktype + '_data/'
-
-    symbols = []
-    if index is None or len(index) == 0:
-        basics = get_basic_data()
-        symbols = int2str(list(basics.index))
-    else:
-        basics = get_basic_data()
-        all = list(basics.index)
-        if 'basic' in index:
-            symbols.extend([x for x in all if x >= 600000])
-        if 'sme' in index:
-            symbols.extend([x for x in all if 300000 <= x < 600000])
-        if 'gem' in index:
-            symbols.extend([x for x in all if 300000 > x])
-        symbols = int2str(symbols)
-        if 'debug' in index:
-            symbols.extend(list(get_index_list('debug').code))
-        if 'test' in index:
-            debug_df = pd.read_csv("./data/test.csv", index_col=0, dtype={'code': str})
-            symbols.extend(list(debug_df.code))
-
-    data_all = []
-    for symb in symbols:
-        df = pd.read_csv(path + symb + '.csv', index_col='datetime', dtype={'code': str})
-        data_cells = create_cell_data(symb, df, ktype, step, start, end)
-        data_all.extend(data_cells)
-
-    print ("[ Finish create data set]")
-    return data_all
-
-
-def create_cell_data(symb, df, ktype, step, start, end):
+def create_cell_data(rc, symb, df, ktype, step, start, end):
     """
 
     :rtype: a list of data_cells
@@ -205,7 +221,7 @@ def create_cell_data(symb, df, ktype, step, start, end):
     ddate = df.index[-knum::-knum]
     datall = np.array(df.ix[::-1, features])
 
-    # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price为候选标签数据
+    # 构建训练数据,nowcell为输入数据，max_price\min_price|cls_price|c2o_price|cls2price为候选标签数据
 
     for i in range(1, len(df) // knum - step - 1):
         nowcell = np.array(datall[i * knum:(i + step) * knum])
@@ -223,10 +239,7 @@ def create_cell_data(symb, df, ktype, step, start, end):
         min_price = max((min(nxtcell[:, 3]) - nowclose) / nowclose * 100, -10)
         cls_price = max(min((nxtcell[-1, 1] - nowclose) / nowclose * 100, 10), -10)
         c2o_price = max(min((nxtcell[0, 0] - nowclose) / nowclose * 100, 10), -10)
-        cls2price = (nxt2close - nowclose) / nowclose * 100
-
-        # # 把价格转化为变化的百分比*10, 数据范围为[-days,+days]，dclose[i-1]为上一个交易日的收盘价
-        # nowcell[:,0:4] = (nowcell[:,0:4] - dclose[i-1]) / dclose[i-1] * 10# + K.epsilon()
+        cls2price = max(min((nxt2close - nowclose) / nowclose * 100, 20), -20)
 
         # 把价格转化为变化的百分比*10, 数据范围为[-1,+1]，dclose[i-1]为上一个交易日的收盘价
         for k in range(step):
@@ -260,8 +273,9 @@ def create_cell_data(symb, df, ktype, step, start, end):
         # 由于交易中无法获取当天真正的收盘价，而是以上一个k5数据作为最后一个5min的k线数据，所以修改测试数据和交易数据一致
         nowcell[-1, :] = nowcell[-2, :]
 
-        # reshape to [days, knum, cols]
-        # nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
+        if rc == 'c':
+            # 卷积网络，训练数据的shape为[days, knum, cols]
+            nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
 
         bsdata = np.array(int2date(str2date(ddate[i + step].split(' ')[0])))
 
@@ -284,7 +298,7 @@ def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     if seed is None:
         seed = time.mktime(time.localtime())
 
-    print ("[ split_dateset ]... into train and test with seed:" + str(seed))
+    print ("[ split_dateset ]... into train and validate with seed:" + str(seed))
     np.random.seed(int(seed))
     np.random.shuffle(dataset)
     # only take effect for array, so need to convert to numpy.array before shuffle
@@ -293,7 +307,7 @@ def split_dataset(dataset, train_psize, batch_size=1, seed=None):
     test_size = (len(dataset) - train_size) / batch_size * batch_size
     train = dataset[:train_size]
     test = dataset[train_size: train_size + test_size]
-    print('[ Finish ] train_dataset: {}, test_dataset: {}'.format(len(train), len(test)))
+    print('[ Finish ] train_dataset: {}, validate_dataset: {}'.format(len(train), len(test)))
     return train, test
 
 
@@ -357,7 +371,7 @@ def balance_data(data_y, data_x, data_x2=None):
     return data_yy, data_xx, data_xx2
 
 
-def create_today_dataset(index=None, days=[3,5], ktype='5', force_return=False):
+def create_today_dataset(rc, index=None, days=[3,5], ktype='5', force_return=False):
     print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))
     start_time = datetime.datetime.now()
     print (start_time)
@@ -391,7 +405,7 @@ def create_today_dataset(index=None, days=[3,5], ktype='5', force_return=False):
             start = (datetime.date.today() - timedelta(days=max(days) + 12)).strftime('%Y-%m-%d')
             dff = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
             for d in days:
-                cell = create_today_cell(symb, dff, d, ktype)
+                cell = create_today_cell(rc, symb, dff, d, ktype)
                 if cell is not None:
                     data_all.get(d).append(cell)
         except:
@@ -415,7 +429,7 @@ mutex = threading.Lock()
 data_all = {}
 
 
-def create_today_dataset_threads(index=None, days=[3,5], ktype='5', force_return=False):
+def create_today_dataset_threads(rc, index=None, days=[3,5], ktype='5', force_return=False):
     print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))
     start_time = datetime.datetime.now()
     print (start_time)
@@ -441,7 +455,7 @@ def create_today_dataset_threads(index=None, days=[3,5], ktype='5', force_return
 
     start = (datetime.date.today() - timedelta(days=max(days) + 12)).strftime('%Y-%m-%d')
     for symbs in symbol_list:
-        t = threading.Thread(target=create_today_dataset_thread, args=(symbs,start, days, ktype, force_return, ))
+        t = threading.Thread(target=create_today_dataset_thread, args=(rc, symbs,start, days, ktype, force_return, ))
         t.start()
         t.join()
 
@@ -456,7 +470,7 @@ def create_today_dataset_threads(index=None, days=[3,5], ktype='5', force_return
     return data_all
 
 
-def create_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', force_return=False):
+def create_today_dataset_thread(rc, symbs, start=None, days=[3, 5], ktype='5', force_return=False):
     global count, mutex, data_all
     for symb in symbs:
         # if st_symbols.index(symb):continue
@@ -472,7 +486,7 @@ def create_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', force
         try:
             dff = ts.get_k_data(code=symb, start=start, end='', ktype='5', autype='qfq')
             for d in days:
-                cell = create_today_cell(symb, dff, d, ktype)
+                cell = create_today_cell(rc, symb, dff, d, ktype)
                 if cell is not None:
                     if mutex.acquire():
                         data_all.get(d).append(cell)
@@ -483,7 +497,7 @@ def create_today_dataset_thread(symbs, start=None, days=[3, 5], ktype='5', force
             continue
 
 
-def create_today_cell(symb, dff, d, ktype):
+def create_today_cell(rc, symb, dff, d, ktype):
     knum = 240 // int(ktype)
     start = (datetime.date.today() - timedelta(days=d + 12)).strftime('%Y-%m-%d')
     features = ['open', 'close', 'high', 'low', 'volume']  # , 'vr']
@@ -540,6 +554,10 @@ def create_today_cell(symb, dff, d, ktype):
             nowcell[:, j] = minmax_scale(nowcell[:, j])
     except:
         pass
+
+    if rc=='c':
+        # 卷积网络，训练数据的shape为[days, knum, cols]
+        nowcell = nowcell.reshape(nowcell.shape[0] // knum, knum, nowcell.shape[-1])
 
     bsdata = np.array(int(symb))
     high = float(max(df.ix[-48:, 'high']))

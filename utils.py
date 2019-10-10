@@ -6,6 +6,7 @@ import matplotlib as plt
 import numpy as np
 from business_calendar import Calendar
 from keras.utils import np_utils
+from model_utils import recall, top1_recall, top_t1p1, top_t2p1
 
 hdays = ['2013-01-01', '2013-01-02', '2013-01-03', '2013-05-01', '2013-05-02', '2013-05-03', '2013-10-01', '2013-10-02', '2013-10-03', '2013-10-04', '2013-10-05', '2013-10-06',
          '2013-10-07',
@@ -173,3 +174,50 @@ def plot_out(sortout, x_index, y_index, points=200):
 def test_plot(mstr):
     d = np.loadtxt("./models/" + mstr + "/2017_02_2_result.txt")
     plot_out(d, 2, 3)
+
+
+def parse_params(mstr):
+    # M1_T5_B256_C3_E100_Lmin_Mgem_K5
+    # build_model1, lookback=5, batch_size = 256, catf = catnorm_data, epoch=100, label = 'min', mem = 'gem'
+
+    catf = {'C3': 'catf3', 'C4': 'catf4', 'C2': 'catf2', 'C22': 'catf22', 'C31': 'catf31', 'C32': 'catf32', 'C1': 'noncatf','C20': 'catf20'}
+    models = {'MR': 'nbuild_rmodel', 'MLR': 'nbuild_lrmodel','MC':'build_cmodel','MC2':'build_cmodel2'}
+    params = {}
+    params['mclass'] = ''
+    params['model_name'] = mstr
+    params['metrics'] = ['categorical_accuracy']
+    params['cmetrics'] = {'recall': recall, 'top1_recall': top1_recall, 'top_t1p1': top_t1p1}
+    params['main_metric'] = {'top_t1p1': top_t1p1}
+    params['totals'] = 5
+
+    mstr_arr = str(mstr).upper().split('_')
+    for s in mstr_arr:
+        if s.startswith('M'):
+            params['model'] = models[s]
+            params['mclass'] = params['mclass'] + s
+        if s.startswith('T'):
+            params['lookback'] = int(s[1:])
+        if s.startswith('B'):
+            params['batch_size'] = int(s[1:])
+        if s.startswith('C'):
+            params['catf'] = catf[s]
+            params['mclass'] = params['mclass'] + s[0:2]
+            params['outdim'] = int(s[1:2])
+            if int(s[1:2]) >= 3:
+                params['cmetrics']['top_t2p1'] = top_t2p1
+                # params['cmetrics']['top2_recall'] = top2_recall
+                # params['main_metric'] = {'top_t2p1': top_t2p1}
+            if int(s[1:2]) == 1:
+                params['main_metric'] = {'mse'}
+
+        if s.startswith('E'):
+            params['epoch'] = int(s[1:])
+        if s.startswith('L'):
+            params['mclass'] = params['mclass'] + s
+            params['label'] = s[1:].lower()
+        if s.startswith('M'):
+            params['mem'] = s[1:]
+        if s.startswith('K'):
+            params['ktype'] = s[1:]
+    params['metrics'].extend(params['cmetrics'].values())
+    return params
