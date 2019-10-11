@@ -428,8 +428,8 @@ def test_model(mstr, run, start, end, test_step=30, mname='best_model.h5'):
 
         test = ncreate_dataset(index=index, days=params['lookback'], start=start_str, end=mid_str, ktype=params['ktype'])
         if len(test) == 0:
-            start_dt = next_n_busday(start_dt, 1)
-            mid_dt = next_n_busday(mid_dt, 1)
+            start_dt = next_n_busday(mid_dt, 1)
+            mid_dt = next_n_busday(start_dt, test_step)
             continue
         bstest, tstest, lbtest_v = create_feeddata(test)
 

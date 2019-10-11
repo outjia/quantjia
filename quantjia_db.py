@@ -242,9 +242,9 @@ def test_model(mstr, run, start, end, step=30, mname='best_model.h5'):
     print ("[ valid model ]... " + mstr)
 
     labelcol = labcol_map[params['label']]
-    # index = ['sme', 'gem']
-    index = ['basic']
-    index = None
+    index = ['sme', 'gem']
+    # index = ['basic']
+    # index = None
     if __debug__:
         index = ['debug']
 
@@ -274,8 +274,8 @@ def test_model(mstr, run, start, end, step=30, mname='best_model.h5'):
 
         test = create_dataset_from_db(mstr, index=index, start=start_str, end=mid_str)
         if len(test) == 0:
-            start_dt = next_n_busday(start_dt, 1)
-            mid_dt = next_n_busday(mid_dt, 1)
+            start_dt = next_n_busday(mid_dt, 1)
+            mid_dt = next_n_busday(start_dt, step)
             continue
         bstest, tstest, lbtest_v = create_feeddata(test)
 

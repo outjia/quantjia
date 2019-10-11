@@ -54,8 +54,8 @@ def refresh_kdata(ktype='5'):
     data_table = "k" + ktype + "_data"
     tmp_table = "k" + ktype + "_tmp"
     merge_sql = "replace into " + data_table + \
-                "(stmp, open, close, high, low, vol,amt, tor,vr) " \
-                "select `date`, open, close, high, low, volume, turnoverratio " \
+                "(stmp, code, open, close, high, low, vol, tor) " \
+                "select `date`, code, open, close, high, low, volume, turnoverratio " \
                 "from " + tmp_table
     trunc_sql = "drop table if exists " + tmp_table
 
