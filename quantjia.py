@@ -69,7 +69,7 @@ def ntrain_model(mstr, start, mid, end):
     labcol_map = {'o2c':-4, 'close': -3, 'min': -2, 'max': -1}
     labelcol = labcol_map[params['label']]
     index = ['sme', 'gem']
-    index = None
+    # index = None
     if __debug__:
         index = ['debug']
 
