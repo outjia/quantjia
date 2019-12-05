@@ -23,9 +23,10 @@ from sqlalchemy import create_engine
 
 from data_utils import *
 from utils import *
+from tushare.util import conns
 
 st_cat = {'sme': '399005', 'gem': '399006', 'hs300s': '000300', 'sz50s': '000016', 'zz500s': '000008'}
-cons = ts.get_apis()
+cons = conns.get_apis()
 engine = create_engine('mysql://root:root@127.0.0.1/tushare?charset=utf8')
 pd.set_option('mode.use_inf_as_na', True)
 
@@ -54,9 +55,16 @@ def refresh_kdata(ktype='5'):
     data_table = "k" + ktype + "_data"
     tmp_table = "k" + ktype + "_tmp"
     merge_sql = "replace into " + data_table + \
-                "(stmp, code, open, close, high, low, vol, tor) " \
-                "select `date`, code, open, close, high, low, volume, turnoverratio " \
+                "(stmp, code, open, close, high, low, vol, amt, tor,vr) " \
+                "select `stmp`, code, open, close, high, low, vol, amount, tor, vr " \
                 "from " + tmp_table
+
+    # 初始化sql,从csv导入数据库
+    # merge_sql = "replace into " + data_table + \
+    #             "(stmp, code, open, close, high, low, vol, amt, tor, vr) " \
+    #             "select `datetime`,code, open, close, high, low, vol, amount, tor, vr " \
+    #             "from " + tmp_table
+
     trunc_sql = "drop table if exists " + tmp_table
 
     sql.execute(trunc_sql, engine)
@@ -66,23 +74,27 @@ def refresh_kdata(ktype='5'):
     basics.to_csv('./data/basics.csv')
     symbols = list(basics.index)
 
-    # if __debug__:
-    #     symbols = ['000506','600108']
+    if __debug__:
+        symbols = ['300216','600108']
 
     failed_symbols = []
     for symb in symbols:
         try:
-            # 初始化
-            # merge_sql = "replace into " + data_table + \
-            #             "(stmp, code, open, close, high, low, vol, amt, tor, vr) " \
-            #             "select `datetime`,code, open, close, high, low, vol, amount, tor, vr " \
-            #             "from " + tmp_table
+            # 初始化,从csv导入数据库
             # df = pd.read_csv('./data/k5_data/' + symb + '.csv', dtype={'code': str})
 
-            df = ts.get_k_data(code=symb, start='2010-01-01', end='', ktype=ktype, autype='qfq')
+            # 在线获取k data
+            # df = ts.get_k_data(code=symb, start='2010-01-01', end='', ktype=ktype, autype='qfq')
+            # df = ts.bar(symb, apis=cons, adj='qfq',ktype=ktype + 'min', start_date='2019-01-01', end_date='')
+            # df = ts.bar('000001', cons=cons, adj='qfq', ktype='5min', start_date='2019-01-01', end_date='')
+
+            end_date = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+            df = ts.bar(symb, conn=cons, adj='qfq',factors=['vr', 'tor'], freq=ktype + 'min', start_date='2019-01-01', end_date=end_date)
+            # df = ts.bar(symb, conn=cons, adj='qfq', freq=ktype + 'min', start_date='2019-01-01', end_date=end_date)
+
             if df is not None and len(df) > 0:
                 df.amount = 0
-                df.to_sql(tmp_table, engine, if_exists='append', index=False)
+                df.to_sql(tmp_table, engine, if_exists='append', index=True, index_label='stmp')
         except:
             print ("Exception when processing stock:" + symb)
             traceback.print_exc()
@@ -168,6 +180,7 @@ def create_dataset_from_db(mstr, index=None, start=None, end=None):
         if 'gem' in index:
             symbols.extend([x for x in all if 300000 > x])
         symbols = int2str(symbols)
+
         if 'debug' in index:
             debug_df = pd.read_csv("./data/debug.csv", index_col=0, dtype={'code': str})
             symbols.extend(list(debug_df.code))
@@ -203,7 +216,7 @@ def create_cell_data(rc, symb, df, ktype, step, start, end):
 
     :rtype: a list of data_cells
     """
-    features = ['open', 'close', 'high', 'low', 'vol']
+    features = ['open', 'close', 'high', 'low', 'vol','tor']
     knum = 240 // int(ktype)
     cells = []
 
@@ -213,7 +226,7 @@ def create_cell_data(rc, symb, df, ktype, step, start, end):
         df.fillna(method='bfill')
         df.fillna(method='ffill')
         df.fillna(value=0)
-        df.ix[:, 'vr'].fillna(value=1.0)
+        # df.ix[:, 'vr'].fillna(value=1.0)
     else:
         return cells
 
@@ -258,13 +271,13 @@ def create_cell_data(rc, symb, df, ktype, step, start, end):
                 # 归一化成交量
                 nowcell[:, j] = minmax_scale(preprocessing.scale(nowcell[:, j], copy=False))
                 j = j + 1
-            if 'tor' in features:
-                # 归一化换手率
-                nowcell[:, j] = minmax_scale(nowcell[:, j])
-                j = j + 1
-            if 'vr' in features:
-                # 归一化量比
-                nowcell[:, j] = minmax_scale(nowcell[:, j])
+            # if 'tor' in features:
+            #     # 归一化换手率
+            #     nowcell[:, j] = minmax_scale(nowcell[:, j])
+            #     j = j + 1
+            # if 'vr' in features:
+            #     # 归一化量比
+            #     nowcell[:, j] = minmax_scale(nowcell[:, j])
         except:
             if __debug__:
                 traceback.print_exc()
@@ -427,7 +440,6 @@ def create_today_dataset(rc, index=None, days=[3,5], ktype='5', force_return=Fal
 count = 0
 mutex = threading.Lock()
 data_all = {}
-
 
 def create_today_dataset_threads(rc, index=None, days=[3,5], ktype='5', force_return=False):
     print ("[ create_dataset]... of stock category %s with previous %s days" % (index, str(days)))

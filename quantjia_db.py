@@ -38,6 +38,7 @@ def ntrain_model(mstr, start, end):
 
     train_x = tstrain
     train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
+    # if params['outdim'] == 2 :
     train_y, train_x, tmp = balance_data(train_y, train_x)
     sz = len(train_y) // params['batch_size'] * params['batch_size']
     train_x = train_x[:sz]
@@ -118,6 +119,7 @@ def ntrain_valid_model(mstr, start, end, train_step=30, val_step=15):
 
         train_x = tstrain
         train_y = eval(params['catf'])(lbtrain_v[:, labelcol])
+        # if params['outdim'] == 2:
         train_y, train_x, tmp = balance_data(train_y, train_x)
         sz = len(train_y) // params['batch_size'] * params['batch_size']
         train_x = train_x[:sz]
